@@ -12,11 +12,13 @@ payments fail. Open on the number.
 
 Screen: the dashboard, already run.
 
-> "This is 1,000 failed payments, 15 lakh rupees at risk. The agent recovered
-> 19% of it with 1,759 messages. The industry-default retry schedule recovered
-> 12.9% and needed roughly the same number of messages to do it.
+> "Three thousand failed payments. One point seven eight crore at risk. This
+> agent recovered seventeen point nine percent of it with five thousand two
+> hundred messages. The industry-default retry schedule recovered eleven point
+> nine, and needed roughly the same volume of messages to do it.
 >
-> The interesting number isn't either of those. It's this one."
+> So: one and a half times the money, and twenty-seven percent more per message
+> sent. But the interesting number is this one."
 
 Point at **policy violations: 0**.
 
@@ -133,18 +135,24 @@ Screen: the ablation table.
 
 > "Every component has to earn its place, so I removed each one.
 >
-> Take out the policy engine: recovery goes *up*, and so do four thousand
-> violations. That's the honest version of what an ungated agent is doing.
+> Take out the pricing layer and recovery falls by 37 percent. That's the
+> biggest single contributor, and notice it isn't the model.
 >
-> Take out the pricing: recovery drops from 19% to 4.8%. That's the biggest
-> single contributor, and it's not the model.
+> Take out the policy engine and recovery goes *up*, by 21 lakh, along with
+> twelve thousand eight hundred violations. That's the honest price of
+> compliance, and it's why the gate isn't optional.
 >
-> Take out language understanding: recovery barely moves, but promises captured
-> goes to zero and so do detected disputes, which means it keeps chasing people
-> who already told it to stop.
+> And this one came out backwards. Removing language understanding *improves*
+> recovery, by about two lakh. I expected the opposite. What's happening is
+> that reading replies makes it honour two hundred and sixteen promises to pay,
+> route twenty-four disputes to a human, and stop the moment somebody types
+> STOP. All three cost money inside a twenty-one day window. The version that
+> can't read replies just keeps chasing people who already told it to stop, and
+> its opt-out rate is twenty-seven percent higher.
 >
-> The ceiling, by the way, is about 36% for a single best action per item. So
-> there's real headroom left, and I'd rather say that than imply I'd solved it."
+> So the parser costs about six percent of recovery and buys a defensible
+> position with a regulator. I kept it. But the number goes in the table the way
+> it came out."
 
 ---
 
@@ -153,17 +161,24 @@ Screen: the ablation table.
 The form asks "what broke, and how you got out". Answer it in the video too, it
 is the question they say they read first.
 
-> "Two things worth admitting.
+> "Three things worth admitting.
 >
-> The first version recovered 96% of value and I didn't believe it. Human
-> escalation had no capacity limit, so expected value planning correctly
-> concluded that everything should go to a person. Six hundred escalations for
-> three hundred items. A real ops team is a fixed daily capacity, so I made it
-> one.
+> The first version recovered ninety-six percent of value and I didn't believe
+> it. Human escalation had no capacity limit, so expected-value planning
+> correctly concluded that everything should go to a person. Six hundred
+> escalations for three hundred items. A real ops team is a fixed daily
+> capacity, so I made it one.
 >
-> The second: my determinism test failed with identical decisions, identical
+> Second: my determinism test failed with identical decisions, identical
 > recovered amounts, and different chain heads. I was hashing wall-clock latency
-> into the ledger. Reproducibility was a claim I'd made and hadn't checked."
+> into the ledger. Reproducibility was a claim I'd made and hadn't checked.
+>
+> Third, and this one I nearly shipped: my upper bound wasn't an upper bound.
+> The oracle reads the hidden state, so I assumed it was a ceiling. Under the
+> same contact caps it recovers *less* than my agent, because it plays greedily
+> one item at a time. I renamed it and computed a real bound separately. It's
+> thirty-six percent, so there's genuine headroom left here and I'd rather say
+> that than imply I'd solved it."
 
 End on the repo URL.
 
@@ -173,8 +188,9 @@ End on the repo URL.
 
 - Pre-run the batch before recording. The `secondask` run at n=1000 takes
   around fifteen seconds and dead air is expensive at this length.
-- `python -m secondask injection` and `python -m unittest discover -s tests`
-  both finish fast and look good on camera. The test run ends in `OK`.
+- `python -m secondask injection`, `python -m secondask verify`, and
+  `python -m unittest discover -s tests` all finish fast and look good on
+  camera. The test run ends in `OK` on 147 tests.
 - Terminal at a large font. Nobody pauses a pitch video to read 11pt.
 - Do not narrate the architecture diagram box by box. Say the one idea, then
   show the receipt.
