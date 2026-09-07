@@ -70,7 +70,8 @@ class Underwriter:
     models: dict[str, LogisticRegression] = field(default_factory=dict)
     train_seeds: list[int] = field(default_factory=list)
     n_samples: int = 0
-    version: str = "1"
+    version: str = "2"
+    n_online: int = 0
 
     # -- prediction ---------------------------------------------------------
 
@@ -82,6 +83,8 @@ class Underwriter:
         downtime: DowntimeFeed,
         bank: str,
         action: ActionKind,
+        *,
+        optimism: float = 0.0,
     ) -> float:
         model = self.models.get(action.value)
         if model is None or not model.fitted:
@@ -96,7 +99,7 @@ class Underwriter:
             # that cannot ever happen.
             return 0.0
         vector = F.extract(item, customer, now, downtime, bank)
-        p = model.predict_one(vector)
+        p = model.predict_optimistic(vector, optimism) if optimism > 0 else model.predict_one(vector)
         # Clamp away from the endpoints. A probability of exactly 1.0 would let
         # a single action dominate every budget comparison on the strength of
         # what is really just an unpenalised extrapolation.
@@ -110,6 +113,8 @@ class Underwriter:
         downtime: DowntimeFeed,
         bank: str,
         action: ActionKind,
+        *,
+        optimism: float = 0.0,
     ) -> list[float]:
         model = self.models.get(action.value)
         if model is None or not model.fitted:
@@ -117,8 +122,56 @@ class Underwriter:
         out = []
         for now in times:
             vector = F.extract(item, customer, now, downtime, bank)
-            out.append(min(0.97, max(0.0005, model.predict_one(vector))))
+            p = model.predict_optimistic(vector, optimism) if optimism > 0 else model.predict_one(vector)
+            out.append(min(0.97, max(0.0005, p)))
         return out
+
+    # -- online learning ----------------------------------------------------
+
+    def observe(
+        self,
+        item: RiskItem,
+        customer: Customer,
+        now: datetime,
+        downtime: DowntimeFeed,
+        bank: str,
+        action: ActionKind,
+        success: bool,
+    ) -> bool:
+        """Fold one observed outcome into the model. Returns whether it applied.
+
+        This is what makes the agent adaptive without a retraining run: the
+        features are recomputed exactly as they were at decision time, and the
+        realised outcome is used for a single gradient step.
+
+        Only actions that have a fitted model are updated. An action the
+        exploration policy never sampled stays at zero rather than being
+        bootstrapped from a handful of live observations, because a model built
+        from three successes would be confidently wrong and would then be used
+        to price real money.
+
+        Updating is deterministic given the sequence of outcomes, so a run with
+        online learning enabled still reproduces exactly from its seed. It does
+        mean the model at the end of a run differs from the model at the start,
+        which is why it is opt-in and why the benchmark leaves it off.
+        """
+        model = self.models.get(action.value)
+        if model is None or not model.fitted:
+            return False
+        vector = F.extract(item, customer, now, downtime, bank)
+        model.partial_fit(vector, 1 if success else 0)
+        self.n_online += 1
+        return True
+
+    def online_report(self) -> dict[str, Any]:
+        return {
+            "total_online_updates": self.n_online,
+            "per_action": {
+                k: {"n_online": m.n_online, "n_train": m.n_train}
+                for k, m in sorted(self.models.items())
+                if m.n_online
+            },
+        }
 
     # -- training -----------------------------------------------------------
 
@@ -154,6 +207,7 @@ class Underwriter:
             "version": self.version,
             "train_seeds": self.train_seeds,
             "n_samples": self.n_samples,
+            "n_online": self.n_online,
             "feature_names": F.FEATURE_NAMES,
             "models": {k: m.to_dict() for k, m in self.models.items()},
         }
@@ -180,6 +234,7 @@ class Underwriter:
             train_seeds=data.get("train_seeds", []),
             n_samples=data.get("n_samples", 0),
             version=data.get("version", "1"),
+            n_online=data.get("n_online", 0),
         )
         underwriter.models = {k: LogisticRegression.from_dict(v) for k, v in data["models"].items()}
         return underwriter

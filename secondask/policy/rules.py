@@ -22,8 +22,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Optional
 
-from ..clock import ist_time_of_day, next_ist_time, to_ist
+from ..clock import ist_date, ist_time_of_day, next_ist_time, to_ist, to_utc
+from ..rng import stable_hash
 from ..world.entities import ACTION_CHANNEL, ActionKind, Channel, ItemState
+from . import holidays
 from .engine import PolicyContext, ProposedAction, RuleVerdict
 from .templates import TemplateError, get_template
 
@@ -34,6 +36,31 @@ CONTACT_END_HOUR = 19
 # Voice is more intrusive than text, so it gets a narrower window.
 VOICE_START_HOUR = 10
 VOICE_END_HOUR = 18
+
+# Deferred actions are spread across this many seconds from the moment the
+# window opens. See ``deferred_start`` for why.
+DISPATCH_SPREAD_SECONDS = 2 * 60 * 60
+
+
+def deferred_start(ts: datetime, hour: int, item_id: str) -> datetime:
+    """Next legal instant for this item, staggered rather than on the hour.
+
+    Returning a bare 08:00:00 to every deferred action is correct and
+    catastrophic. Overnight failures accumulate for eleven hours and then every
+    one of them fires in the same second: the gateway sees a spike two orders of
+    magnitude above steady state, the SMS provider rate-limits, the circuit
+    breaker opens, and the compliant behaviour has manufactured its own outage.
+    A real dunning queue smooths dispatch.
+
+    The offset is derived from a stable hash of the item id, so it is spread
+    across the first two hours of the window, identical on every replay, and
+    independent of how many items happen to be waiting. Deriving it from a
+    counter or from arrival order would make it depend on run state and break
+    reproducibility; deriving it from ``random`` would break it outright.
+    """
+    base = next_ist_time(ts, hour)
+    offset = stable_hash("dispatch", item_id) % DISPATCH_SPREAD_SECONDS
+    return base + timedelta(seconds=offset)
 
 MAX_CONTACTS_24H = 2
 MAX_CONTACTS_7D = 4
@@ -86,7 +113,7 @@ def rbi_contact_hours(action: ProposedAction, ctx: PolicyContext) -> RuleVerdict
         rid,
         False,
         reason=f"contact at {local.strftime('%H:%M')} IST is outside the 08:00-19:00 window",
-        retry_at=next_ist_time(action.scheduled_at, CONTACT_START_HOUR),
+        retry_at=deferred_start(action.scheduled_at, CONTACT_START_HOUR, action.item_id),
         citation=rbi_contact_hours.citation,
     )
 
@@ -103,7 +130,7 @@ def voice_window(action: ProposedAction, ctx: PolicyContext) -> RuleVerdict:
         rid,
         False,
         reason=f"voice call at {to_ist(action.scheduled_at).strftime('%H:%M')} IST is outside 10:00-18:00",
-        retry_at=next_ist_time(action.scheduled_at, VOICE_START_HOUR),
+        retry_at=deferred_start(action.scheduled_at, VOICE_START_HOUR, action.item_id),
         citation=voice_window.citation,
     )
 
@@ -549,9 +576,56 @@ def escalation_capacity(action: ProposedAction, ctx: PolicyContext) -> RuleVerdi
     )
 
 
+@_rule("R-HOLIDAY-WINDOW", "Internal control aligned with RBI fair practice expectations: no automated commercial collection outreach on a national holiday or major festival.")
+def holiday_window(action: ProposedAction, ctx: PolicyContext) -> RuleVerdict:
+    """No automated collection outreach on a national holiday.
+
+    Legal, and a bad idea. A dunning SMS on Diwali morning produces a complaint
+    rather than a payment, and it is the sort of thing that ends up in a
+    screenshot. Expected value does not price reputational damage, so this is a
+    constraint rather than a cost.
+
+    Two carve-outs, both deliberate:
+
+    * Silent retries are exempt. Nobody is contacted, and a mandate that would
+      have succeeded should not be delayed by a day for a reason the customer
+      will never observe.
+    * Human escalation is exempt. A person deciding to call is a judgment this
+      rule has no business overriding, and the ops rota already accounts for
+      holidays.
+
+    The rule defers to the next working day rather than refusing outright, so
+    the item queues instead of being dropped.
+    """
+    rid = "R-HOLIDAY-WINDOW"
+    if not action.kind.is_contact:
+        return _ok(rid)
+    local_date = ist_date(action.scheduled_at)
+    name = holidays.holiday_name(local_date)
+    if name is None:
+        return _ok(rid)
+    resume = holidays.next_working_day(local_date)
+    resume_at = to_utc(
+        to_ist(action.scheduled_at).replace(
+            year=resume.year, month=resume.month, day=resume.day,
+            hour=CONTACT_START_HOUR, minute=0, second=0, microsecond=0,
+        )
+    )
+    return RuleVerdict(
+        rid,
+        False,
+        reason=f"{local_date.isoformat()} is {name}; automated outreach is suspended",
+        retry_at=resume_at + timedelta(
+            seconds=stable_hash("dispatch", action.item_id) % DISPATCH_SPREAD_SECONDS
+        ),
+        citation=holiday_window.citation,
+    )
+
+
 DEFAULT_RULES = [
     rbi_contact_hours,
     voice_window,
+    holiday_window,
     contact_cooldown,
     frequency_cap_24h,
     frequency_cap_7d,

@@ -65,6 +65,22 @@ class LogisticRegression:
     n_train: int = 0
     base_rate: float = 0.0
 
+    # Online state.
+    #
+    # ``precision`` is the diagonal of a ridge design matrix: it starts at the
+    # prior and accumulates the squared standardised feature values that have
+    # actually been observed. It is what makes an uncertainty estimate possible
+    # without storing or inverting a 113x113 matrix, which in pure Python would
+    # cost more than the rest of the system combined.
+    #
+    # A diagonal approximation ignores correlation between features and so
+    # understates uncertainty where features move together. That is the right
+    # direction to be wrong in for a system that spends money on exploration:
+    # it explores less than full LinUCB would, never more.
+    precision: list[float] = field(default_factory=list)
+    n_online: int = 0
+    online_lr: float = 0.05
+
     def __post_init__(self) -> None:
         if not self.weights:
             self.weights = [0.0] * self.n_features
@@ -72,6 +88,8 @@ class LogisticRegression:
             self.mean = [0.0] * self.n_features
         if not self.scale:
             self.scale = [1.0] * self.n_features
+        if not self.precision:
+            self.precision = [1.0] * self.n_features
 
     # -- fitting ------------------------------------------------------------
 
@@ -134,6 +152,13 @@ class LogisticRegression:
                     self.weights[j] -= lr * (grad_w[j] * inv + self.l2 * self.weights[j])
 
         self.fitted = True
+        # Seed the precision diagonal from the batch so an online update does not
+        # treat a model fitted on thousands of samples as though it knew nothing.
+        for j in range(self.n_features):
+            total = 0.0
+            for row in Z:
+                total += row[j] * row[j]
+            self.precision[j] = 1.0 + total
         return self
 
     def _compute_standardisation(self, X: Sequence[Sequence[float]]) -> None:
@@ -173,6 +198,75 @@ class LogisticRegression:
     def predict(self, X: Sequence[Sequence[float]]) -> list[float]:
         return [self.predict_one(row) for row in X]
 
+    # -- online updating ----------------------------------------------------
+
+    def uncertainty(self, row: Sequence[float]) -> float:
+        """How little is known about this region of feature space.
+
+        ``sqrt(sum(z_j^2 / precision_j))``, the diagonal analogue of the LinUCB
+        confidence width. Large when the standardised features are unusual
+        relative to what has been observed, and it shrinks as evidence
+        accumulates, which is the property that makes exploration self-limiting.
+        """
+        if not self.fitted:
+            return 1.0
+        total = 0.0
+        for j in range(self.n_features):
+            z = (row[j] - self.mean[j]) / self.scale[j]
+            total += (z * z) / max(1e-9, self.precision[j])
+        return math.sqrt(max(0.0, total))
+
+    def predict_optimistic(self, row: Sequence[float], alpha: float) -> float:
+        """Prediction with an optimism bonus applied in logit space.
+
+        Adding the bonus to the probability directly would be wrong: it would
+        add the same absolute amount at p=0.02 and p=0.9, and near the ceiling it
+        would push predictions past 1. In logit space the bonus is a shift in
+        evidence, which is what an uncertainty width actually is.
+        """
+        if not self.fitted:
+            return self.base_rate
+        if alpha <= 0.0:
+            return self.predict_one(row)
+        z = self.bias
+        for j in range(self.n_features):
+            z += self.weights[j] * ((row[j] - self.mean[j]) / self.scale[j])
+        return sigmoid(z + alpha * self.uncertainty(row))
+
+    def partial_fit(self, row: Sequence[float], label: int, *, lr: float | None = None) -> float:
+        """One SGD step on a single observed outcome. Returns the residual.
+
+        Standardisation statistics are deliberately **frozen** at their batch
+        values rather than updated online. Letting the mean and scale drift while
+        the weights are expressed in terms of them silently rescales every
+        existing coefficient, which shows up as a model that slowly forgets
+        things nobody changed. Recalibrating those belongs in a retrain.
+
+        The learning rate decays as ``1 / (1 + n_online / 500)``, so early
+        feedback moves the model and later feedback refines it. Without decay a
+        long-running process oscillates around the optimum forever.
+        """
+        if len(row) != self.n_features:
+            raise ValueError(f"expected {self.n_features} features, got {len(row)}")
+        if label not in (0, 1):
+            raise ValueError(f"label must be 0 or 1, got {label!r}")
+
+        standardised = [(row[j] - self.mean[j]) / self.scale[j] for j in range(self.n_features)]
+        z = self.bias
+        for j in range(self.n_features):
+            z += self.weights[j] * standardised[j]
+        error = sigmoid(z) - label
+
+        step = (lr if lr is not None else self.online_lr) / (1.0 + self.n_online / 500.0)
+        self.bias -= step * error
+        for j in range(self.n_features):
+            self.weights[j] -= step * (error * standardised[j] + self.l2 * self.weights[j])
+            self.precision[j] += standardised[j] * standardised[j]
+
+        self.n_online += 1
+        self.fitted = True
+        return error
+
     def top_coefficients(self, names: Sequence[str], k: int = 12) -> list[tuple[str, float]]:
         """Largest absolute standardised coefficients.
 
@@ -194,6 +288,8 @@ class LogisticRegression:
             "fitted": self.fitted,
             "n_train": self.n_train,
             "base_rate": round(self.base_rate, 6),
+            "precision": [round(p, 4) for p in self.precision],
+            "n_online": self.n_online,
         }
 
     @classmethod
@@ -206,4 +302,8 @@ class LogisticRegression:
         model.fitted = data.get("fitted", True)
         model.n_train = data.get("n_train", 0)
         model.base_rate = data.get("base_rate", 0.0)
+        stored_precision = data.get("precision")
+        if isinstance(stored_precision, list) and len(stored_precision) == model.n_features:
+            model.precision = list(stored_precision)
+        model.n_online = data.get("n_online", 0)
         return model

@@ -25,6 +25,12 @@ The agent does not know any individual customer's payday, exactly as it would no
 in production. It knows the population-level salary cycle, and that is enough to
 learn that an insufficient-funds failure retried on the 2nd behaves differently
 from the same failure retried on the 26th.
+
+**Interactions.** Explicit crosses of method family against reason class, source
+class and time of day. A linear model cannot otherwise express that insufficient
+funds on a mandate and insufficient funds on an invoice are different problems,
+and that difference is most of the signal. See the block above ``FEATURE_NAMES``
+for why the crosses use coarsened fields rather than the raw enums.
 """
 
 from __future__ import annotations
@@ -75,6 +81,73 @@ SOURCES = tuple(s.value for s in ErrorSource)
 METHODS = tuple(m.value for m in Method)
 STEPS = tuple(s.value for s in ErrorStep)
 
+# ---------------------------------------------------------------------------
+# Interaction terms
+# ---------------------------------------------------------------------------
+#
+# A linear model can only express "insufficient funds is bad" or "mandates are
+# good". It cannot express "insufficient funds on a mandate behaves completely
+# differently from insufficient funds on an invoice", which is true and is most
+# of the signal. Crossing features by hand is how a linear model gets to say it.
+#
+# The crosses are built from *coarse* versions of each field rather than the raw
+# enums. Method has eight values and source has seven, so the full cross would be
+# 56 sparse columns against roughly 2,500 samples per action, most of them
+# empty. Three method families against three source classes is nine columns that
+# actually get populated. The coarsening is where the domain knowledge lives:
+# what matters is whether a rail carries a standing authorisation, not whether it
+# is UPI or NACH.
+
+METHOD_FAMILIES = ("one_off", "mandate", "invoice")
+SOURCE_CLASSES = ("customer", "infra", "other")
+TIME_BUCKETS = ("night", "morning", "afternoon", "evening")
+
+
+def method_family(method: Method) -> str:
+    if method == Method.INVOICE:
+        return "invoice"
+    if method.is_mandate:
+        return "mandate"
+    return "one_off"
+
+
+def source_class(source: ErrorSource) -> str:
+    """Collapse error_source to what actually changes the decision.
+
+    ``bank``, ``gateway`` and ``internal`` all mean "somebody else's problem,
+    likely transient, a retry is nearly free". ``customer`` means the customer
+    must do something. Everything else is uninformative.
+    """
+    if source == ErrorSource.CUSTOMER:
+        return "customer"
+    if source in (ErrorSource.BANK, ErrorSource.GATEWAY, ErrorSource.INTERNAL):
+        return "infra"
+    return "other"
+
+
+def time_bucket(hour: float) -> str:
+    """Coarse time of day, IST.
+
+    Boundaries follow the contact window rather than the clock: ``night`` is
+    exactly the span where contact is forbidden, so the bucket carries the
+    legality of the slot as well as its response rate.
+    """
+    if hour < 8.0 or hour >= 19.0:
+        return "night"
+    if hour < 12.0:
+        return "morning"
+    if hour < 17.0:
+        return "afternoon"
+    return "evening"
+
+
+def _cross_names(prefix: str, left: tuple[str, ...], right: tuple[str, ...]) -> list[str]:
+    return [f"{prefix}:{a}*{b}" for a in left for b in right]
+
+
+def _cross(left_value: str, left: tuple[str, ...], right_value: str, right: tuple[str, ...]) -> list[float]:
+    return [1.0 if (a == left_value and b == right_value) else 0.0 for a in left for b in right]
+
 
 def reason_class(reason: ErrorReason) -> str:
     """Never raises on an unseen reason.
@@ -90,6 +163,14 @@ FEATURE_NAMES: list[str] = (
     + [f"source={s}" for s in SOURCES]
     + [f"reason_class={r}" for r in REASON_CLASSES]
     + [f"step={s}" for s in STEPS]
+    + [f"family={f}" for f in METHOD_FAMILIES]
+    + [f"srcclass={s}" for s in SOURCE_CLASSES]
+    + [f"tod={t}" for t in TIME_BUCKETS]
+    + _cross_names("x", METHOD_FAMILIES, REASON_CLASSES)
+    + _cross_names("x", METHOD_FAMILIES, SOURCE_CLASSES)
+    + _cross_names("x", METHOD_FAMILIES, TIME_BUCKETS)
+    + [f"attempts_x_family={f}" for f in METHOD_FAMILIES]
+    + [f"attempts_x_reason={r}" for r in REASON_CLASSES]
     + [
         "log_amount",
         "is_mandate",
@@ -174,11 +255,27 @@ def extract(
     hour = ist_time_of_day(now)
     angle = 2.0 * math.pi * hour / 24.0
 
+    family = method_family(item.method)
+    src_class = source_class(item.error_source)
+    reason = reason_class(item.error_reason)
+    bucket = time_bucket(hour)
+    # Attempts are squashed before crossing. Raw counts would let a single
+    # runaway item dominate the interaction column after standardisation.
+    attempts_norm = min(1.0, item.attempts / 6.0)
+
     vector: list[float] = []
     vector += _one_hot(item.method.value, METHODS)
     vector += _one_hot(item.error_source.value, SOURCES)
-    vector += _one_hot(reason_class(item.error_reason), REASON_CLASSES)
+    vector += _one_hot(reason, REASON_CLASSES)
     vector += _one_hot(item.error_step.value, STEPS)
+    vector += _one_hot(family, METHOD_FAMILIES)
+    vector += _one_hot(src_class, SOURCE_CLASSES)
+    vector += _one_hot(bucket, TIME_BUCKETS)
+    vector += _cross(family, METHOD_FAMILIES, reason, REASON_CLASSES)
+    vector += _cross(family, METHOD_FAMILIES, src_class, SOURCE_CLASSES)
+    vector += _cross(family, METHOD_FAMILIES, bucket, TIME_BUCKETS)
+    vector += [attempts_norm if f == family else 0.0 for f in METHOD_FAMILIES]
+    vector += [attempts_norm if r == reason else 0.0 for r in REASON_CLASSES]
     vector += [
         math.log1p(max(0, item.outstanding_paise) / 100.0),
         1.0 if item.method.is_mandate else 0.0,

@@ -56,6 +56,17 @@ def _digest_u64(*parts: object) -> int:
     return struct.unpack(">Q", hasher.digest()[:8])[0]
 
 
+def stable_hash(*parts: object) -> int:
+    """A stable non-negative integer hash of the given parts.
+
+    Public because the policy engine needs deterministic per-item jitter for
+    dispatch staggering, and ``hash()`` cannot be used for that: Python
+    randomises string hashing per process, so the same item would be staggered
+    differently on every run and reproducibility would silently break.
+    """
+    return _digest_u64(*parts)
+
+
 def crn_uniform(*parts: object) -> float:
     """A uniform(0,1) draw determined entirely by ``parts``.
 

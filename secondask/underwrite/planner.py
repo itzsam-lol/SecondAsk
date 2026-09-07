@@ -90,6 +90,35 @@ ANNOYANCE_BUDGET = 2.6
 ANNOYANCE_BUDGET_CAP = 4.6
 ANNOYANCE_BUDGET_PIVOT_RUPEES = 500.0
 
+# Customer tiers, and the multiplier applied to the goodwill price for each.
+#
+# A flat goodwill price says a four-year customer who has paid on time eleven
+# times and a signup from yesterday are worth annoying equally. They are not.
+# The lifetime value at risk differs by an order of magnitude, and the whole
+# point of pricing goodwill is that it stands in for lifetime value.
+#
+# The multipliers move in the direction that costs money: a valuable customer is
+# *more* expensive to annoy, so the agent contacts them less readily, not more.
+# That is the opposite of what a naive revenue optimiser does, and it is correct,
+# because the balance on one failed payment is small next to the relationship.
+#
+# Tiering is from observable account history only. No demographic input, no
+# inferred income, nothing that would make this a scoring system about people
+# rather than about accounts.
+TIER_MULTIPLIER: dict[str, float] = {
+    "new": 0.75,          # little history to protect, and still forming a view
+    "standard": 1.00,
+    "established": 1.45,  # repeat payer, demonstrably worth keeping
+    "priority": 1.90,     # long tenure and a strong payment record
+    "fragile": 2.40,      # has ignored us repeatedly; one more push loses them
+}
+
+# Growth rate of the exponential fatigue factor. The fifth message in a week
+# costs far more goodwill than the first, and a linear factor understates that
+# badly: it prices message ten at eleven times message one when the real ratio,
+# measured in the probability of an opt-out, is much steeper.
+FATIGUE_GROWTH = 0.45
+
 # Working capital discount. exp(-days / TAU).
 TAU_DELAY_DAYS = 34.0
 
@@ -257,26 +286,71 @@ def available_actions(item: RiskItem, customer: Customer, blocked: set[ActionKin
     return out
 
 
-def annoyance_budget_for(item: RiskItem, base: float = ANNOYANCE_BUDGET) -> float:
-    """Goodwill a single item may consume, scaled by the amount outstanding."""
+def annoyance_budget_for(
+    item: RiskItem, base: float = ANNOYANCE_BUDGET, customer: Customer | None = None
+) -> float:
+    """Goodwill a single item may consume, scaled by the amount outstanding.
+
+    A valuable customer gets a *smaller* budget as well as a higher price, so
+    tiering tightens the hard limit and the soft one together. Without that, a
+    large enough balance would still let the planner spend its way through a
+    priority customer's patience one expensive message at a time.
+    """
     rupees = max(1.0, item.outstanding_paise / 100.0)
     bonus = 0.55 * math.log10(max(1.0, rupees / ANNOYANCE_BUDGET_PIVOT_RUPEES))
-    return min(ANNOYANCE_BUDGET_CAP, base + max(0.0, bonus))
+    budget = min(ANNOYANCE_BUDGET_CAP, base + max(0.0, bonus))
+    if customer is not None:
+        budget /= max(0.5, tier_multiplier(customer))
+    return budget
 
 
-def goodwill_cost(action: ActionKind, customer: Customer) -> int:
+def customer_tier(customer: Customer) -> str:
+    """Segment a customer from observable account history.
+
+    ``fragile`` is checked first and deliberately outranks tenure. Somebody who
+    has ignored several previous approaches is the customer most likely to be
+    lost by one more, regardless of how long they have been around, and the
+    ordering of these branches is the difference between protecting them and
+    treating them as a lapsed account worth pushing harder.
+    """
+    if customer.prior_ignores >= 3:
+        return "fragile"
+    if customer.tenure_days >= 730 and customer.prior_recoveries >= 2:
+        return "priority"
+    if customer.tenure_days >= 365 or customer.prior_recoveries >= 2:
+        return "established"
+    if customer.tenure_days < 60:
+        return "new"
+    return "standard"
+
+
+def tier_multiplier(customer: Customer) -> float:
+    return TIER_MULTIPLIER.get(customer_tier(customer), 1.0)
+
+
+def fatigue_factor(customer: Customer) -> float:
+    """Exponential in accumulated annoyance, floored at 1.0.
+
+    Capped at 12x. Uncapped, a customer who has somehow accumulated a large
+    annoyance score produces a goodwill price so large it overflows into
+    dominating every comparison, and the hard budget in ``plan`` is the control
+    that should be stopping contact by then anyway.
+    """
+    return min(12.0, math.exp(FATIGUE_GROWTH * max(0.0, customer.annoyance)))
+
+
+def goodwill_cost(action: ActionKind, customer: Customer, *, price_paise: int = ANNOYANCE_PRICE_PAISE) -> int:
     """Expected lifetime value destroyed by taking this action, in paise.
 
-    Escalates with accumulated annoyance rather than staying flat, because the
-    tenth message does more damage than the first. That convexity is what makes
-    the planner spread contact across customers instead of hammering whichever
-    one has the largest balance.
+        goodwill = base_annoyance_cost * tier_multiplier * exponential_fatigue
+
+    Integer paise out, as everywhere else that touches money. The float
+    multipliers are intermediate; the result is truncated once, at the end.
     """
     if not action.is_contact:
         return 0
-    delta = ANNOYANCE_DELTA[ACTION_CHANNEL[action]]
-    escalation = 1.0 + max(0.0, customer.annoyance)
-    return int(ANNOYANCE_PRICE_PAISE * delta * escalation)
+    base = price_paise * ANNOYANCE_DELTA[ACTION_CHANNEL[action]]
+    return int(base * tier_multiplier(customer) * fatigue_factor(customer))
 
 
 def plan(
@@ -308,7 +382,7 @@ def plan(
         return Plan(best=None, reason="no candidate time inside the horizon")
 
     candidates: list[Candidate] = []
-    budget = annoyance_budget_for(item, annoyance_budget)
+    budget = annoyance_budget_for(item, annoyance_budget, customer)
     over_budget = customer.annoyance >= budget
 
     for action in actions:
@@ -321,11 +395,7 @@ def plan(
         base_cost = ACTION_COST_PAISE.get(action, 0)
         if action == ActionKind.HUMAN_ESCALATION:
             base_cost += ESCALATION_SCARCITY_PREMIUM_PAISE
-        goodwill = int(
-            annoyance_price_paise
-            * ANNOYANCE_DELTA[ACTION_CHANNEL[action]]
-            * (1.0 + max(0.0, customer.annoyance))
-        ) if contact else 0
+        goodwill = goodwill_cost(action, customer, price_paise=annoyance_price_paise)
 
         probabilities = underwriter.p_recover_batch(item, customer, times, downtime, bank, action)
         for when, p in zip(times, probabilities):

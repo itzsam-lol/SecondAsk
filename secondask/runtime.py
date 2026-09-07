@@ -86,6 +86,7 @@ class RunResult:
     churns: int = 0
     replies_received: int = 0
     promises_captured: int = 0
+    partial_promises: int = 0
     disputes_detected: int = 0
     hardship_detected: int = 0
 
@@ -147,6 +148,7 @@ class RunResult:
             "churns": self.churns,
             "replies_received": self.replies_received,
             "promises_captured": self.promises_captured,
+            "partial_promises": self.partial_promises,
             "disputes_detected": self.disputes_detected,
             "hardship_detected": self.hardship_detected,
             "guard_hits": dict(sorted(self.guard_hits.items())),
@@ -581,12 +583,29 @@ class Runtime:
             customer.opted_out_channels.add(Channel.SMS)
             customer.opted_out_channels.add(Channel.WHATSAPP)
             customer.opted_out_channels.add(Channel.VOICE)
-        elif parsed.intent == ReplyIntent.PROMISE_TO_PAY and parsed.promise_date:
+        elif parsed.intent in (ReplyIntent.PROMISE_TO_PAY, ReplyIntent.PARTIAL_PAYMENT_PROMISE):
             # Cap how far a promise can push the next contact. Otherwise "I will
             # pay in December" silently writes the item off.
-            horizon = min(parsed.promise_date, now + timedelta(days=21))
-            item.promise_to_pay_at = horizon
+            promised = parsed.promise_date or (now + timedelta(days=3))
+            item.promise_to_pay_at = min(promised, now + timedelta(days=21))
             self.result.promises_captured += 1
+            if parsed.intent == ReplyIntent.PARTIAL_PAYMENT_PROMISE:
+                self.result.partial_promises += 1
+                # Recorded as a claim on the item, for the operator and for later
+                # reconciliation against what actually arrives.
+                #
+                # It is deliberately NOT written to any field an action reads.
+                # This number came out of a customer's message, and the whole
+                # point of R-AMOUNT-BOUND is that a message cannot set the amount
+                # on a money-moving action. Assigning it to outstanding_paise
+                # here would be a one-line way to let anybody who owes money
+                # decide what they owe.
+                item.claimed_partial_paise = parsed.claimed_partial_paise
+                entry["claimed_partial_paise"] = parsed.claimed_partial_paise
+                entry["claim_note"] = (
+                    "customer-stated amount, recorded as a claim only; "
+                    "actions remain bound to the ledger balance"
+                )
         elif parsed.intent == ReplyIntent.ALREADY_PAID:
             # A claim, not a fact. The ledger is the only authority on
             # settlement, so this records the claim and pauses contact rather

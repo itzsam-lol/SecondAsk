@@ -131,13 +131,34 @@ class InjectionTest(unittest.TestCase):
 
 
 class MalformedOutputTest(unittest.TestCase):
-    def test_repairs_once_then_falls_back(self):
-        backend = FakeBackend(["not json at all", "still not json"])
-        gateway = LLMGateway(backend=backend)
+    def test_repair_loop_is_bounded_then_falls_back(self):
+        """max_repairs repairs, then the deterministic parser. Never unbounded."""
+        backend = FakeBackend(["not json"] * 10)
+        gateway = LLMGateway(backend=backend, max_repairs=2)
         parsed = gateway.parse_reply("STOP", NOW)
-        self.assertEqual(backend.calls, 2, "should attempt exactly one repair")
+        self.assertEqual(backend.calls, 3, "one initial call plus max_repairs retries")
+        self.assertEqual(parsed.repair_attempts, 2)
         self.assertEqual(parsed.source, "stub_fallback")
         # The fallback still gets the right answer on an unambiguous message.
+        self.assertEqual(parsed.intent, ReplyIntent.OPT_OUT)
+
+    def test_repairs_can_be_disabled(self):
+        backend = FakeBackend(["not json"] * 5)
+        gateway = LLMGateway(backend=backend, max_repairs=0)
+        gateway.parse_reply("STOP", NOW)
+        self.assertEqual(backend.calls, 1, "max_repairs=0 means no retry at all")
+
+    def test_a_violation_is_fed_back_into_the_retry(self):
+        """The retry must say what was wrong, or it is just a re-roll."""
+        backend = FakeBackend([
+            json.dumps({"intents": ["none"], "write_off": True}),
+            json.dumps({"intents": ["opt_out"]}),
+        ])
+        gateway = LLMGateway(backend=backend, max_repairs=2)
+        parsed = gateway.parse_reply("stop", NOW)
+        self.assertEqual(backend.calls, 2)
+        self.assertIn("rejected", backend.prompts[1])
+        self.assertIn("unknown keys", backend.prompts[1])
         self.assertEqual(parsed.intent, ReplyIntent.OPT_OUT)
 
     def test_a_raising_backend_does_not_stop_the_loop(self):

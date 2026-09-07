@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 
 class Method(str, Enum):
@@ -273,6 +273,16 @@ class ReplyIntent(str, Enum):
 
     NONE = "none"
     PROMISE_TO_PAY = "promise_to_pay"
+    PARTIAL_PAYMENT_PROMISE = "partial_payment_promise"
+    """A promise to pay *part* of the balance.
+
+    Still a promise. The amount it carries is a customer's assertion about what
+    they intend to send, and it is recorded as a claim. It never becomes the
+    amount on a money-moving action: ``R-AMOUNT-BOUND`` binds those to the
+    ledger balance, and ``test_llm_multi_intent`` proves a parsed amount cannot
+    reach an action.
+    """
+
     ALREADY_PAID = "already_paid"        # a *claim*, triggers verification only
     DISPUTE = "dispute"
     OPT_OUT = "opt_out"
@@ -280,6 +290,39 @@ class ReplyIntent(str, Enum):
     HARDSHIP = "hardship"
     NEEDS_HELP = "needs_help"
     UNINTELLIGIBLE = "unintelligible"
+
+
+# Order in which simultaneously present intents are resolved to a primary.
+#
+# Safety first, deliberately. A message reading "I'll pay half next week but
+# stop messaging me" contains a payment promise and a stop. It is first and
+# foremost a stop. Ordering by what protects the customer rather than by what
+# collects the money is the whole point of having an explicit precedence list
+# instead of taking whichever intent the model happened to emit first.
+INTENT_PRECEDENCE: tuple["ReplyIntent", ...] = ()
+
+
+INTENT_PRECEDENCE = (
+    ReplyIntent.OPT_OUT,
+    ReplyIntent.WRONG_NUMBER,
+    ReplyIntent.DISPUTE,
+    ReplyIntent.HARDSHIP,
+    ReplyIntent.PARTIAL_PAYMENT_PROMISE,
+    ReplyIntent.PROMISE_TO_PAY,
+    ReplyIntent.ALREADY_PAID,
+    ReplyIntent.NEEDS_HELP,
+    ReplyIntent.UNINTELLIGIBLE,
+    ReplyIntent.NONE,
+)
+
+
+def primary_intent(intents: "Iterable[ReplyIntent]") -> "ReplyIntent":
+    """Resolve several simultaneous intents to the one that governs."""
+    present = set(intents)
+    for candidate in INTENT_PRECEDENCE:
+        if candidate in present:
+            return candidate
+    return ReplyIntent.NONE
 
 
 @dataclass
@@ -375,6 +418,13 @@ class RiskItem:
     prenotified_at: Optional[datetime] = None
     promise_to_pay_at: Optional[datetime] = None
     escalated_at: Optional[datetime] = None
+    claimed_partial_paise: Optional[int] = None
+    """What the customer said they would pay. A record, not an input.
+
+    Deliberately separate from ``amount_paise`` and ``recovered_paise``. Nothing
+    that computes an action amount reads this field, and R-AMOUNT-BOUND would
+    refuse the action if anything did.
+    """
     cost_paise: int = 0
 
     # LATENT: simulator only, never exposed to any agent

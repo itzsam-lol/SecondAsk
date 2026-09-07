@@ -253,6 +253,7 @@ def aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "churns": sum(r["churns"] for r in runs),
         "replies_received": sum(r["replies_received"] for r in runs),
         "promises_captured": sum(r["promises_captured"] for r in runs),
+        "partial_promises": sum(r.get("partial_promises", 0) for r in runs),
         "disputes_detected": sum(r["disputes_detected"] for r in runs),
         "total_violations": sum(r["total_violations"] for r in runs),
         "violating_actions": sum(r["violating_actions"] for r in runs),

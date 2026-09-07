@@ -115,13 +115,19 @@ class ContactHoursTest(unittest.TestCase):
         self.assertTrue(verdict.allowed)
 
     def test_denial_offers_the_next_legal_instant(self):
+        """Deferral lands inside the window, staggered rather than on the hour.
+
+        The exact minute is a jitter derived from the item id (see
+        ``deferred_start``), so this asserts the window rather than a timestamp.
+        """
         at = ist(hour=22, minute=30)
         verdict = rules.rbi_contact_hours(make_action(at=at), ctx(now=at))
         self.assertFalse(verdict.allowed)
         self.assertIsNotNone(verdict.retry_at)
         local = verdict.retry_at.astimezone(IST)
-        self.assertEqual((local.hour, local.minute), (8, 0))
         self.assertEqual(local.day, 11)  # next morning, not the same one
+        self.assertGreaterEqual(local.hour, rules.CONTACT_START_HOUR)
+        self.assertLess(local.hour, rules.CONTACT_START_HOUR + 2)
 
     def test_deferral_across_a_month_boundary(self):
         at = ist(year=2026, month=3, day=31, hour=23)
