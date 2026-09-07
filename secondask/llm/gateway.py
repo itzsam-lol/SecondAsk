@@ -374,14 +374,27 @@ class LLMGateway:
 
     # -- reply parsing ------------------------------------------------------
 
-    def parse_reply(self, text: str, now: datetime) -> ParsedReply:
+    def parse_reply(
+        self,
+        text: str,
+        now: datetime,
+        *,
+        known_names: Optional[list[str]] = None,
+    ) -> ParsedReply:
+        """Classify one customer message.
+
+        ``known_names`` are names already held for this customer. Passing them
+        is how name redaction is done reliably: exact matching against your own
+        records beats trying to find arbitrary names in free text. See
+        ``redact.redact`` for why the alternative is not attempted.
+        """
         started = time.perf_counter()
         self.stats.calls += 1
 
         if not isinstance(text, str) or not text.strip():
             return ParsedReply(intent=ReplyIntent.UNINTELLIGIBLE, confidence=1.0, source="guard")
 
-        red = redaction.redact(text, max_len=MAX_REPLY_CHARS)
+        red = redaction.redact(text, max_len=MAX_REPLY_CHARS, known_names=known_names)
         if red.found_pii:
             self.stats.pii_redactions += 1
         safe_text = red.text

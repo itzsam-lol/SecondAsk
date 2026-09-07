@@ -10,6 +10,7 @@
     python -m secondask verify       check a ledger's hash chain
     python -m secondask sweep        sensitivity to the goodwill price
     python -m secondask serve        the dashboard
+    python -m secondask serve-api    the webhook and inbound message API
 
 Everything is deterministic given a seed. Nothing needs credentials: without an
 ``ANTHROPIC_API_KEY`` the model layer runs its deterministic path, and without
@@ -334,6 +335,13 @@ def cmd_sweep(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve_api(args: argparse.Namespace) -> int:
+    from .server.api import serve_api
+
+    serve_api(host=args.host, port=args.port, prefer_fastapi=not args.stdlib)
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from .server.app import serve
 
@@ -399,6 +407,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_world_args(p)
     p.add_argument("--prices", default="0,1000,2000,4000,8000,16000")
     p.set_defaults(func=cmd_sweep)
+
+    p = sub.add_parser("serve-api", help="run the webhook and message ingestion API")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8500)
+    p.add_argument("--stdlib", action="store_true", help="force the stdlib server even if FastAPI is installed")
+    p.set_defaults(func=cmd_serve_api)
 
     p = sub.add_parser("serve", help="run the dashboard")
     _add_world_args(p)
