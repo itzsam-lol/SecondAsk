@@ -187,6 +187,20 @@ The dashboard replays a finished run on a scrubbable timeline. Every line is
 read back from the hash-chained ledger, so it cannot display a number the audit
 trail does not support, and clicking any decision prints its receipt.
 
+The audit trail is checkable rather than merely claimed:
+
+```bash
+python -m secondask run --agent secondask --ledger out/run.jsonl
+python -m secondask verify out/run.jsonl
+#   1201 entries
+#   head: 522564b13221c2fd8cb7871aefdac5b009a6326422dcc397d8b16df5944e4300
+#   chain verified
+
+# edit any single entry in that file, then:
+python -m secondask verify out/tampered.jsonl
+#   CHAIN BROKEN: entry 600: contents were modified after it was written
+```
+
 ![dashboard](docs/dashboard.jpg)
 
 ---

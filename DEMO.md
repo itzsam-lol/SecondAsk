@@ -114,7 +114,12 @@ This is the section that matters most. Do all four, fast.
 > Settlement is only ever written from a payment event, and the amount on any
 > money-moving action is bound to the ledger balance. It's structural."
 
-**4. The gateway falls over.** Show the breaker stats from a run.
+**4. The ledger.** Edit one line of a written-out ledger, re-verify.
+
+> "The audit trail isn't a log file. It's hash-chained. I've edited entry six
+> hundred out of twelve hundred, and it names exactly which one."
+
+**5. The gateway falls over.** Show the breaker stats from a run.
 
 > "The mock gateway injects 5xx and rate limits on every run, so the retry path
 > and the circuit breaker are exercised whether or not Razorpay is having a bad

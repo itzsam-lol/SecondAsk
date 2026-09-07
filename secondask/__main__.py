@@ -173,16 +173,34 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    from .eval.harness import CONFIGS, run_agent
+    from .eval.harness import CONFIGS
     from .eval.report import method_breakdown
+    from .execute.razorpay_client import RazorpayClient
+    from .llm.anthropic_client import build_backend
+    from .llm.gateway import LLMGateway
+    from .policy.engine import PolicyEngine
+    from .policy.rules import DEFAULT_RULES
+    from .runtime import Runtime
     from .world.generator import generate_world
 
     if args.agent not in CONFIGS:
         print(f"unknown agent {args.agent!r}. known: {', '.join(sorted(CONFIGS))}", file=sys.stderr)
         return 2
+    config = CONFIGS[args.agent]
 
+    # Built here rather than through run_agent so the ledger is reachable and
+    # --ledger can write the actual chain.
     world = generate_world(seed=args.seed, n_items=args.items, horizon_days=args.horizon)
-    result = run_agent(CONFIGS[args.agent], world, razorpay_mode=args.razorpay, use_real_llm=args.real_llm)
+    backend = build_backend() if (args.real_llm and config.llm_enabled) else None
+    runtime = Runtime(
+        world,
+        config.factory(),
+        PolicyEngine(list(DEFAULT_RULES), enabled=config.policy_enabled),
+        RazorpayClient(mode=args.razorpay, seed=world.seed),
+        LLMGateway(backend=backend, enabled=config.llm_enabled),
+    )
+    result = runtime.run()
+    result.agent_name = args.agent
     data = result.to_dict()
 
     print(f"{args.agent}  seed={args.seed}  items={args.items}")
@@ -218,9 +236,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(method_breakdown(rows))
 
     if args.ledger:
-        result_ledger = getattr(args, "_ledger", None)
+        directory = os.path.dirname(os.path.abspath(args.ledger))
+        os.makedirs(directory, exist_ok=True)
+        runtime.ledger.write_jsonl(args.ledger)
         print()
-        print(f"note: pass --json to capture the full run; --ledger writes the chain")
+        print(f"wrote {len(runtime.ledger)} ledger entries to {args.ledger}")
+        print(f"check it with:  python -m secondask verify {args.ledger}")
     return 0
 
 
