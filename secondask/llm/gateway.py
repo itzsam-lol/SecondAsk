@@ -107,6 +107,7 @@ class GatewayStats:
     errors: int = 0
     pii_redactions: int = 0
     injections_flagged: int = 0
+    backend_disabled_after: int = 0
     total_latency_ms: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
@@ -118,6 +119,7 @@ class GatewayStats:
             "errors": self.errors,
             "pii_redactions": self.pii_redactions,
             "injections_flagged": self.injections_flagged,
+            "backend_disabled_after": self.backend_disabled_after,
             "avg_latency_ms": round(self.total_latency_ms / self.calls, 2) if self.calls else 0.0,
         }
 
@@ -353,6 +355,7 @@ class LLMGateway:
         enabled: bool = True,
         redact_pii: bool = True,
         max_repairs: int = 2,
+        failure_threshold: int = 12,
     ) -> None:
         """``enabled=False`` produces the no-LLM ablation.
 
@@ -364,6 +367,11 @@ class LLMGateway:
         self.enabled = enabled
         self.redact_pii = redact_pii
         self.max_repairs = max(0, max_repairs)
+        # Consecutive backend failures tolerated before the gateway stops
+        # calling it for the rest of the run. See ``_backend_usable``.
+        self.failure_threshold = max(1, failure_threshold)
+        self._consecutive_failures = 0
+        self.backend_disabled = False
         self.stats = GatewayStats()
 
     @property
@@ -371,6 +379,36 @@ class LLMGateway:
         if not self.enabled:
             return "disabled"
         return self.backend.name if self.backend else "stub"
+
+    # -- backend health -----------------------------------------------------
+
+    def _backend_usable(self) -> bool:
+        """Whether the model backend is still worth calling.
+
+        A dead credential is not a transient error, and treating it as one is
+        expensive in a way that only appears at scale. Measured against a real
+        revoked key: every message cost two failed round trips at roughly 375ms
+        each before falling back. Across a 12,000 item batch that is more than
+        two hours spent rediscovering the same 403, plus 24,000 rejected requests
+        pointed at somebody else's API.
+
+        So after ``failure_threshold`` consecutive failures the gateway stops
+        calling the backend and runs its deterministic path instead. The latch is
+        one-way on purpose: a run that has established the credential does not
+        work should not keep testing that hypothesis, and a run is short. The
+        flag is reported in the stats, so a degraded run is visible rather than
+        merely quiet.
+        """
+        return self.backend is not None and not self.backend_disabled
+
+    def _record_backend_failure(self) -> None:
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self.failure_threshold and not self.backend_disabled:
+            self.backend_disabled = True
+            self.stats.backend_disabled_after = self._consecutive_failures
+
+    def _record_backend_success(self) -> None:
+        self._consecutive_failures = 0
 
     # -- reply parsing ------------------------------------------------------
 
@@ -413,8 +451,9 @@ class LLMGateway:
             self.stats.total_latency_ms += result.latency_ms
             return result
 
-        if self.backend is None:
+        if not self._backend_usable():
             result = _stub_parse(safe_text, now)
+            result.source = "stub" if self.backend is None else "stub_backend_down"
             result.latency_ms = (time.perf_counter() - started) * 1000
             self.stats.total_latency_ms += result.latency_ms
             return result
@@ -442,8 +481,13 @@ class LLMGateway:
                 parsed, violations = self._coerce_reply(raw, now)
             except Exception:  # noqa: BLE001
                 self.stats.errors += 1
+                self._record_backend_failure()
                 parsed, violations = None, ["backend error"]
+                if self.backend_disabled:
+                    break
 
+            if parsed is not None:
+                self._record_backend_success()
             if parsed is not None and not violations:
                 break
 
@@ -582,7 +626,7 @@ class LLMGateway:
         re-validated by ``Template.render`` inside the policy engine, so an
         over-long or structurally unsafe value is caught even if it gets here.
         """
-        if not self.enabled or self.backend is None:
+        if not self.enabled or not self._backend_usable():
             return dict(defaults)
 
         self.stats.calls += 1
@@ -602,6 +646,7 @@ class LLMGateway:
             payload = _extract_json(raw)
         except Exception:  # noqa: BLE001
             self.stats.errors += 1
+            self._record_backend_failure()
             payload = None
 
         self.stats.total_latency_ms += (time.perf_counter() - started) * 1000
@@ -622,7 +667,7 @@ class LLMGateway:
     def narrate(self, facts: dict[str, Any]) -> str:
         """Display-only root cause narration. Never influences an action."""
         fallback = _fallback_narration(facts)
-        if not self.enabled or self.backend is None:
+        if not self.enabled or not self._backend_usable():
             return fallback
         self.stats.calls += 1
         started = time.perf_counter()
@@ -630,6 +675,7 @@ class LLMGateway:
             text = self.backend.complete_json(NARRATE_SYSTEM, json.dumps(facts, default=str), max_tokens=180)
         except Exception:  # noqa: BLE001
             self.stats.errors += 1
+            self._record_backend_failure()
             text = ""
         self.stats.total_latency_ms += (time.perf_counter() - started) * 1000
         cleaned = (text or "").strip().strip("`")

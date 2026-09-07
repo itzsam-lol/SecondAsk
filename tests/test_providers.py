@@ -274,3 +274,110 @@ class SignTestTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BackendBreakerTest(unittest.TestCase):
+    """The gateway stops calling a backend that is consistently failing.
+
+    Found by pointing the system at a real credential that turned out to be for
+    a different API. Every message cost two failed round trips before falling
+    back, which is invisible at four messages and is two hours of latency plus
+    24,000 rejected requests across a 12,000 item batch.
+    """
+
+    class AlwaysFails:
+        name = "broken"
+
+        def __init__(self):
+            self.calls = 0
+
+        def complete_json(self, system, user, *, max_tokens=256):
+            self.calls += 1
+            raise RuntimeError("HTTP 403: blocked")
+
+    class FailsThenWorks:
+        name = "flaky"
+
+        def __init__(self, failures):
+            self.remaining = failures
+            self.calls = 0
+
+        def complete_json(self, system, user, *, max_tokens=256):
+            self.calls += 1
+            if self.remaining > 0:
+                self.remaining -= 1
+                raise RuntimeError("transient")
+            return json.dumps({"intents": ["opt_out"]})
+
+    def setUp(self):
+        from datetime import datetime, timezone
+
+        self.now = datetime(2026, 3, 10, 12, tzinfo=timezone.utc)
+
+    def gateway(self, backend, **kwargs):
+        from secondask.llm.gateway import LLMGateway
+
+        return LLMGateway(backend=backend, max_repairs=1, **kwargs)
+
+    def test_backend_is_cut_off_after_the_threshold(self):
+        from secondask.world.entities import ReplyIntent
+
+        backend = self.AlwaysFails()
+        gw = self.gateway(backend, failure_threshold=4)
+        for _ in range(50):
+            parsed = gw.parse_reply("STOP", self.now)
+        self.assertTrue(gw.backend_disabled)
+        self.assertEqual(gw.stats.backend_disabled_after, 4)
+        # Bounded, not 50 parses worth of retries.
+        self.assertLessEqual(backend.calls, 6)
+        # And still correct.
+        self.assertEqual(parsed.intent, ReplyIntent.OPT_OUT)
+        self.assertEqual(parsed.source, "stub_backend_down")
+
+    def test_a_transient_failure_does_not_latch(self):
+        """Recovering from a blip must not disable the backend for the run."""
+        backend = self.FailsThenWorks(failures=2)
+        gw = self.gateway(backend, failure_threshold=8)
+        for _ in range(6):
+            gw.parse_reply("stop", self.now)
+        self.assertFalse(gw.backend_disabled)
+        self.assertGreater(backend.calls, 2)
+
+    def test_success_resets_the_counter(self):
+        backend = self.FailsThenWorks(failures=3)
+        gw = self.gateway(backend, failure_threshold=5)
+        for _ in range(10):
+            gw.parse_reply("stop", self.now)
+        self.assertFalse(gw.backend_disabled)
+
+    def test_disabled_backend_still_answers_correctly(self):
+        from secondask.world.entities import ReplyIntent
+
+        gw = self.gateway(self.AlwaysFails(), failure_threshold=2)
+        for _ in range(10):
+            gw.parse_reply("x", self.now)
+        self.assertTrue(gw.backend_disabled)
+        cases = [
+            ("STOP", ReplyIntent.OPT_OUT),
+            ("I never ordered this", ReplyIntent.DISPUTE),
+            ("I can pay half, Rs 2500, on the 5th", ReplyIntent.PARTIAL_PAYMENT_PROMISE),
+        ]
+        for text, expected in cases:
+            self.assertEqual(gw.parse_reply(text, self.now).intent, expected, text)
+
+    def test_slot_filling_also_honours_the_breaker(self):
+        gw = self.gateway(self.AlwaysFails(), failure_threshold=2)
+        for _ in range(6):
+            gw.parse_reply("x", self.now)
+        self.assertTrue(gw.backend_disabled)
+        before = gw.backend.calls
+        out = gw.fill_slots("RETRY_LINK_EN", ("merchant",), {}, "en", {"merchant": "Acme"})
+        self.assertEqual(out, {"merchant": "Acme"})
+        self.assertEqual(gw.backend.calls, before, "fill_slots called a disabled backend")
+
+    def test_degradation_is_visible_in_the_stats(self):
+        """A quietly degraded run is worse than a loud one."""
+        gw = self.gateway(self.AlwaysFails(), failure_threshold=3)
+        for _ in range(10):
+            gw.parse_reply("x", self.now)
+        self.assertEqual(gw.stats.to_dict()["backend_disabled_after"], 3)
