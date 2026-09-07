@@ -36,9 +36,9 @@ VOICE_START_HOUR = 10
 VOICE_END_HOUR = 18
 
 MAX_CONTACTS_24H = 2
-MAX_CONTACTS_7D = 5
+MAX_CONTACTS_7D = 4
 MIN_CONTACT_GAP_HOURS = 6.0
-MAX_ATTEMPTS_PER_ITEM = 8
+MAX_ATTEMPTS_PER_ITEM = 6
 
 # RBI e-mandate: the pre-debit notification must precede the debit by at least
 # 24 hours. An upper bound is our own addition: a notice sent three weeks ago
@@ -496,6 +496,59 @@ def spend_cap(action: ProposedAction, ctx: PolicyContext) -> RuleVerdict:
     )
 
 
+@_rule("R-ESCALATE-ONCE", "Internal control: an item handed to a human leaves the automated loop and does not come back to it.")
+def escalate_once(action: ProposedAction, ctx: PolicyContext) -> RuleVerdict:
+    """One escalation per item.
+
+    Without this the planner discovers that a human is effective and escalates
+    the same case repeatedly, which in the real world means several people
+    working the same account and calling the same customer. Escalation is a
+    handover, not a retry.
+    """
+    rid = "R-ESCALATE-ONCE"
+    if action.kind != ActionKind.HUMAN_ESCALATION:
+        return _ok(rid)
+    if ctx.item.escalated_at is None:
+        return _ok(rid)
+    return RuleVerdict(
+        rid, False, reason="this item has already been handed to a human",
+        citation=escalate_once.citation,
+    )
+
+
+@_rule("R-ESCALATION-CAPACITY", "Internal control: human review is a fixed daily capacity, not a resource that scales with the size of the backlog.")
+def escalation_capacity(action: ProposedAction, ctx: PolicyContext) -> RuleVerdict:
+    """A daily cap on how many cases a human team can absorb.
+
+    This is the constraint that stops expected value planning from concluding
+    that everything should go to a person. Escalation is genuinely the most
+    effective action for a disputed or high value case, so a planner that prices
+    it without a capacity limit will choose it for the entire batch. Pricing
+    scarce capacity as though it were elastic is how an optimiser produces a
+    plan that cannot be executed.
+
+    Denials carry tomorrow morning as a retry time, so a case that misses
+    today's capacity queues rather than being dropped.
+    """
+    rid = "R-ESCALATION-CAPACITY"
+    if action.kind != ActionKind.HUMAN_ESCALATION:
+        return _ok(rid)
+    if ctx.escalation_daily_cap <= 0:
+        return _ok(rid)
+    if ctx.escalations_today < ctx.escalation_daily_cap:
+        return _ok(rid)
+    return RuleVerdict(
+        rid,
+        False,
+        reason=(
+            f"human review capacity for today is used up "
+            f"({ctx.escalations_today}/{ctx.escalation_daily_cap})"
+        ),
+        retry_at=next_ist_time(action.scheduled_at, CONTACT_START_HOUR),
+        citation=escalation_capacity.citation,
+    )
+
+
 DEFAULT_RULES = [
     rbi_contact_hours,
     voice_window,
@@ -513,6 +566,8 @@ DEFAULT_RULES = [
     stop_on_dispute,
     stop_on_hardship,
     honour_promise_to_pay,
+    escalate_once,
+    escalation_capacity,
     amount_matches_ledger,
     idempotency,
     spend_cap,

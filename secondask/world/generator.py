@@ -62,7 +62,17 @@ TICKET: dict[Method, tuple[int, float, int, int]] = {
     Method.EMANDATE_UPI: (699, 0.80, 49, 15_000),
     Method.EMANDATE_CARD: (899, 0.85, 49, 100_000),
     Method.NACH: (2_400, 0.95, 100, 100_000),
-    Method.INVOICE: (85_000, 1.05, 5_000, 4_000_000),
+    # Held well below a true B2B distribution, deliberately.
+    #
+    # At the original 85,000 rupee median, invoices were 7% of items and 69% of
+    # the value in the batch, so the value-weighted headline was decided by
+    # whether about twenty items happened to land. That is a property of the
+    # benchmark rather than of any agent, and it made the comparison unreadable.
+    # These parameters keep every method under roughly half the total value, so
+    # the metric measures policy quality instead of tail luck. The per-method
+    # breakdown is reported regardless, because an aggregate that hides a
+    # distribution is how this went unnoticed in the first place.
+    Method.INVOICE: (35_000, 0.80, 5_000, 600_000),
 }
 
 # ---------------------------------------------------------------------------

@@ -117,7 +117,7 @@ def _fatigue(customer: Customer) -> float:
     a fraction of the first, which is the mechanism that makes "blast everything"
     lose money rather than merely spend it.
     """
-    return math.exp(-0.42 * max(0.0, customer.annoyance))
+    return math.exp(-0.55 * max(0.0, customer.annoyance))
 
 
 def _time_of_day_lift(ts: datetime) -> float:
@@ -181,6 +181,7 @@ def success_probability(
             Blocker.LIQUIDITY: 0.30,
             Blocker.INTENT_LOST: 0.22,
             Blocker.TRANSIENT_INFRA: 0.50,
+            Blocker.AUTH_FRICTION: 0.46,
             Blocker.UNREACHABLE: 0.05,
         }[blocker]
         return min(0.95, base * (0.6 + 0.4 * responsiveness))
@@ -211,7 +212,7 @@ def success_probability(
     if blocker == Blocker.TRANSIENT_INFRA:
         resolved = resolves is not None and ts >= resolves
         if is_retry:
-            return 0.86 if resolved else 0.04
+            return 0.78 if resolved else 0.04
         if resolved:
             return min(0.92, 0.55 * responsiveness * fatigue * lift * 1.6)
         return min(0.92, 0.10 * responsiveness * fatigue * lift)
@@ -233,7 +234,7 @@ def success_probability(
         since_payday = _hours_between(ts, resolves)
         window = _decay(since_payday, TAU_POST_PAYDAY)
         if is_retry:
-            return min(0.95, 0.72 * window)
+            return min(0.95, 0.62 * window)
         return min(0.92, 0.55 * window * (0.45 + 0.55 * responsiveness) * fatigue * lift)
 
     # INTENT_LOST
@@ -395,7 +396,26 @@ def execute_counterfactual(
         return outcome
 
     p = success_probability(world, item, customer, action, ts)
-    u = crn_uniform(world.seed, item.item_id, action.value, hour_bucket(ts))
+
+    # Retries and contacts draw differently, and the difference is the point.
+    #
+    # A retry asks a question about the *account*: is there money, is the
+    # mandate alive, is the issuer up. That question has one answer at a given
+    # moment, so every retry taken while the account is in the same state must
+    # get the same answer. Modelling it as an independent coin per attempt makes
+    # persistence pay: eight retries at p=0.7 succeed almost surely, and an
+    # agent learns to hammer rather than to time. So retries share a single
+    # latent draw per item and only a change in p, which means a change in the
+    # world, can flip the outcome. Timing becomes the only lever, which is what
+    # is actually true of a bank account.
+    #
+    # A contact asks a question about a *person*, and people genuinely do ignore
+    # the first message and act on the second. Those stay independent, damped by
+    # fatigue.
+    if action in (ActionKind.SILENT_RETRY, ActionKind.MANDATE_DEBIT):
+        u = crn_uniform(world.seed, item.item_id, "retry_luck")
+    else:
+        u = crn_uniform(world.seed, item.item_id, action.value, hour_bucket(ts))
     outcome.success = u < p
 
     if outcome.success:

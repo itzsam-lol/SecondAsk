@@ -233,7 +233,11 @@ ACTION_COST_PAISE: dict[ActionKind, int] = {
     ActionKind.UPDATE_INSTRUMENT: 18,
     ActionKind.INCENTIVE_OFFER: 88,
     ActionKind.VOICE_CALL: 4500,     # ~90s of agent-assisted outbound voice
-    ActionKind.HUMAN_ESCALATION: 12000,  # a human's time is the expensive resource
+    # A fully loaded ops hour is around 250 rupees and a recovery case takes
+    # roughly 20 minutes, so ~85 rupees of direct cost plus overhead. The real
+    # constraint on escalation is not this price though, it is capacity: see
+    # R-ESCALATION-CAPACITY, which caps how many cases a team can take per day.
+    ActionKind.HUMAN_ESCALATION: 15000,
     ActionKind.STOP: 0,
 }
 
@@ -370,6 +374,7 @@ class RiskItem:
     last_action_at: Optional[datetime] = None
     prenotified_at: Optional[datetime] = None
     promise_to_pay_at: Optional[datetime] = None
+    escalated_at: Optional[datetime] = None
     cost_paise: int = 0
 
     # LATENT: simulator only, never exposed to any agent

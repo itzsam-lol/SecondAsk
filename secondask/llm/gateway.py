@@ -280,7 +280,21 @@ class LLMGateway:
             self.stats.pii_redactions += 1
         safe_text = red.text
 
-        if not self.enabled or self.backend is None:
+        if not self.enabled:
+            # The no-language-model ablation. This is not the same as "fall back
+            # to the deterministic parser": it is the absence of any language
+            # understanding at all, which is what a recovery system without an
+            # NLU layer actually has. Inbound text arrives and means nothing to
+            # it, so opt-outs go unhonoured until the customer blocks the
+            # sender, disputes are never detected, and a promise to pay is just
+            # another unanswered SMS. Measuring against the stub instead would
+            # compare two parsers and report the model's contribution as zero.
+            result = ParsedReply(intent=ReplyIntent.NONE, confidence=0.0, source="disabled")
+            result.latency_ms = (time.perf_counter() - started) * 1000
+            self.stats.total_latency_ms += result.latency_ms
+            return result
+
+        if self.backend is None:
             result = _stub_parse(safe_text, now)
             result.latency_ms = (time.perf_counter() - started) * 1000
             self.stats.total_latency_ms += result.latency_ms

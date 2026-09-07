@@ -130,6 +130,8 @@ class PolicyContext:
     spend_cap_paise: int = 0
     consent_promotional: bool = False
     dnd_registered: bool = False
+    escalations_today: int = 0
+    escalation_daily_cap: int = 0
     merchant_name: str = "Merchant"
 
 
