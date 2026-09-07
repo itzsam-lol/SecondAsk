@@ -30,7 +30,7 @@ from ..agents.base import Agent
 from ..agents.baselines import AggressiveAgent, DoNothingAgent, FixedScheduleAgent, LLMOnlyAgent
 from ..agents.oracle import OracleAgent
 from ..execute.razorpay_client import RazorpayClient
-from ..llm.anthropic_client import build_backend
+from ..llm import providers
 from ..llm.gateway import LLMGateway
 from ..policy.engine import PolicyEngine
 from ..policy.rules import DEFAULT_RULES
@@ -149,6 +149,7 @@ def run_agent(
     spend_cap_paise: int = 0,
     escalation_daily_cap: int = 0,
     use_real_llm: bool = False,
+    llm_provider: str = "auto",
 ) -> RunResult:
     """Run one agent against one world.
 
@@ -164,7 +165,7 @@ def run_agent(
         seed=world.seed,
         failure_rate=gateway_failure_rate,
     )
-    backend = build_backend() if (use_real_llm and config.llm_enabled) else None
+    backend = providers.build(llm_provider) if (use_real_llm and config.llm_enabled) else None
     llm = LLMGateway(backend=backend, enabled=config.llm_enabled)
     runtime = Runtime(
         world, agent, policy, client, llm,
@@ -185,6 +186,8 @@ def run_suite(
     razorpay_mode: str = "mock",
     gateway_failure_rate: float = 0.06,
     use_real_llm: bool = False,
+    llm_provider: str = "auto",
+    jobs: int = 1,
     progress: Optional[Callable[[str], None]] = None,
 ) -> dict[str, Any]:
     keys = keys or DEFAULT_SUITE
@@ -194,23 +197,42 @@ def run_suite(
 
     runs: dict[str, list[dict[str, Any]]] = {k: [] for k in keys}
     world_summaries: list[dict[str, Any]] = []
-
     for seed in seeds:
-        reference = generate_world(seed=seed, n_items=n_items, horizon_days=horizon_days)
-        world_summaries.append(reference.summary())
-        for key in keys:
+        world_summaries.append(
+            generate_world(seed=seed, n_items=n_items, horizon_days=horizon_days).summary()
+        )
+
+    tasks = [(key, seed) for seed in seeds for key in keys]
+    options = dict(
+        n_items=n_items,
+        horizon_days=horizon_days,
+        razorpay_mode=razorpay_mode,
+        gateway_failure_rate=gateway_failure_rate,
+        use_real_llm=use_real_llm,
+        llm_provider=llm_provider,
+    )
+
+    if jobs > 1 and not use_real_llm:
+        # Parallel across (agent, seed). Each task builds its own world, so there
+        # is no shared state to race on and no ordering to preserve: results are
+        # keyed and reassembled below.
+        #
+        # Real-LLM runs stay serial on purpose. Twenty processes hammering one
+        # API key is the fastest way to discover a rate limit, and the wall clock
+        # there is dominated by network latency rather than by CPU anyway.
+        completed = _run_parallel(tasks, options, jobs, progress)
+    else:
+        completed = {}
+        for key, seed in tasks:
             if progress:
                 progress(f"seed {seed}: {key}")
-            # Fresh world per agent so state mutation cannot leak across runs.
-            world = generate_world(seed=seed, n_items=n_items, horizon_days=horizon_days)
-            result = run_agent(
-                CONFIGS[key],
-                world,
-                razorpay_mode=razorpay_mode,
-                gateway_failure_rate=gateway_failure_rate,
-                use_real_llm=use_real_llm,
-            )
-            runs[key].append(result.to_dict())
+            completed[(key, seed)] = _run_one(key, seed, options)
+
+    for seed in seeds:
+        for key in keys:
+            result = completed.get((key, seed))
+            if result is not None:
+                runs[key].append(result)
 
     return {
         "config": {
@@ -219,11 +241,72 @@ def run_suite(
             "horizon_days": horizon_days,
             "razorpay_mode": razorpay_mode,
             "gateway_failure_rate": gateway_failure_rate,
-            "llm": "claude" if use_real_llm else "deterministic",
+            "llm": llm_provider if use_real_llm else "deterministic",
+            "jobs": jobs,
         },
         "worlds": world_summaries,
         "runs": runs,
     }
+
+
+def _run_one(key: str, seed: int, options: dict[str, Any]) -> dict[str, Any]:
+    """One (agent, seed) cell. Module level so it can be pickled to a worker."""
+    world = generate_world(
+        seed=seed, n_items=options["n_items"], horizon_days=options["horizon_days"]
+    )
+    result = run_agent(
+        CONFIGS[key],
+        world,
+        razorpay_mode=options["razorpay_mode"],
+        gateway_failure_rate=options["gateway_failure_rate"],
+        use_real_llm=options["use_real_llm"],
+        llm_provider=options["llm_provider"],
+    )
+    return result.to_dict()
+
+
+def _worker(args: tuple[str, int, dict[str, Any]]) -> tuple[str, int, dict[str, Any]]:
+    key, seed, options = args
+    return key, seed, _run_one(key, seed, options)
+
+
+def _run_parallel(
+    tasks: list[tuple[str, int]],
+    options: dict[str, Any],
+    jobs: int,
+    progress: Optional[Callable[[str], None]],
+) -> dict[tuple[str, int], dict[str, Any]]:
+    """Fan out over processes, falling back to serial if that is not possible.
+
+    Processes rather than threads: this workload is pure Python and CPU bound, so
+    threads would contend on the GIL and run slower than serial.
+
+    The fallback matters. Process pools fail for environment reasons that have
+    nothing to do with this code (a frozen interpreter, a restricted sandbox, a
+    module that will not pickle), and a benchmark that cannot run at all is worse
+    than one that runs slowly.
+    """
+    import concurrent.futures as futures
+
+    payload = [(key, seed, options) for key, seed in tasks]
+    completed: dict[tuple[str, int], dict[str, Any]] = {}
+    try:
+        with futures.ProcessPoolExecutor(max_workers=jobs) as pool:
+            done = 0
+            for key, seed, result in pool.map(_worker, payload, chunksize=1):
+                completed[(key, seed)] = result
+                done += 1
+                if progress:
+                    progress(f"{done}/{len(payload)} done (seed {seed}: {key})")
+    except Exception as exc:  # noqa: BLE001
+        if progress:
+            progress(f"parallel execution unavailable ({type(exc).__name__}), falling back to serial")
+        completed = {}
+        for key, seed in tasks:
+            if progress:
+                progress(f"seed {seed}: {key}")
+            completed[(key, seed)] = _run_one(key, seed, options)
+    return completed
 
 
 def aggregate(runs: list[dict[str, Any]]) -> dict[str, Any]:

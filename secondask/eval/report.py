@@ -176,3 +176,67 @@ def method_breakdown(rows: list[tuple[str, int, int, int, int]]) -> str:
             f"{pct(recovered, at_risk):>9s} {f'{n_rec}/{n}':>12s}"
         )
     return "\n".join(lines)
+
+
+def confidence_table(runs: dict[str, list[dict[str, Any]]], order: Sequence[str]) -> str:
+    """Per-seed variability, and the paired comparison that actually matters.
+
+    Two things are reported that a single aggregate cannot show.
+
+    The first is how much a headline moves between seeds. A ratio quoted to two
+    decimals from three runs implies a precision that is not there, and this
+    table is the correction to that.
+
+    The second is the paired comparison against the fixed-schedule baseline.
+    Both agents saw the same worlds under common random numbers, so the
+    difference is measured seed by seed and the interval is over those
+    differences. Treating the two as independent samples would discard the
+    pairing that the shared seeds exist to create, and would give an interval
+    several times too wide.
+    """
+    from .stats import MIN_SEEDS_FOR_CI, bootstrap_ci, paired_bootstrap_ci, ratio_ci, sign_test_p
+
+    baseline_key = "b1_fixed_schedule"
+    present = [k for k in order if k in runs and runs[k]]
+    if not present:
+        return "no runs"
+    n_seeds = len(runs[present[0]])
+
+    lines = [f"per-seed variability and paired comparison ({n_seeds} seeds, 95% bootstrap)"]
+    if n_seeds < MIN_SEEDS_FOR_CI:
+        lines.append(
+            f"  n={n_seeds} is below the {MIN_SEEDS_FOR_CI}-seed minimum, so intervals are"
+            " withheld rather than printed as though they meant something."
+        )
+    lines.append("")
+    header = (
+        f"{'agent':26s} {'recovered/seed':>22s} {'vs b1 (paired delta)':>26s} {'sign p':>8s}"
+    )
+    lines.append(header)
+    lines.append("-" * len(header))
+
+    base = [r["recovered_paise"] for r in runs[baseline_key]] if baseline_key in runs else []
+    for key in present:
+        values = [r["recovered_paise"] for r in runs[key]]
+        own = bootstrap_ci(values, salt=f"ci:{key}")
+        cell = own.render(lambda v: fmt(int(v), compact=True))
+        delta_cell, p_cell = "", ""
+        if base and key != baseline_key and len(values) == len(base):
+            delta = paired_bootstrap_ci(values, base, salt=f"d:{key}")
+            delta_cell = delta.render(lambda v: ("+" if v >= 0 else "") + fmt(int(v), compact=True))
+            p_cell = f"{sign_test_p([a - b for a, b in zip(values, base)]):.3f}"
+        lines.append(f"{key:26s} {cell:>22s} {delta_cell:>26s} {p_cell:>8s}")
+
+    if base and "secondask" in runs and len(runs["secondask"]) == len(base):
+        sa = [r["recovered_paise"] for r in runs["secondask"]]
+        ratio = ratio_ci(sa, base, salt="ratio:secondask")
+        msgs_sa = [r["messages_sent"] for r in runs["secondask"]]
+        msgs_b1 = [r["messages_sent"] for r in runs[baseline_key]]
+        msg_ratio = ratio_ci(msgs_sa, msgs_b1, salt="ratio:messages")
+        lines.append("")
+        lines.append("secondask against the fixed schedule:")
+        lines.append(f"  money    x{ratio.render(lambda v: f'{v:.2f}')}")
+        lines.append(f"  messages x{msg_ratio.render(lambda v: f'{v:.2f}')}")
+        if not ratio.reliable:
+            lines.append("  (point estimates only; run more seeds for an interval)")
+    return "\n".join(lines)

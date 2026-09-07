@@ -139,12 +139,20 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
 
 def cmd_eval(args: argparse.Namespace) -> int:
     from .eval.harness import CONFIGS, DEFAULT_SUITE, NOT_VALID_RESULTS, run_suite
-    from .eval.report import ablation_table, comparison_table, denial_table, violations_table
+    from .eval.report import (
+        ablation_table, comparison_table, confidence_table,
+        denial_table, violations_table,
+    )
 
     keys = [k.strip() for k in args.agents.split(",")] if args.agents else DEFAULT_SUITE
     seeds = _seeds(args)
+    from .llm import providers
+
     print(f"seeds={list(seeds)} items={args.items} horizon={args.horizon}d "
-          f"gateway={args.razorpay} llm={'claude' if args.real_llm else 'deterministic'}")
+          f"gateway={args.razorpay} jobs={args.jobs} "
+          f"llm={args.provider if args.real_llm else 'deterministic'}")
+    if args.real_llm:
+        print(f"  {providers.describe()}")
     started = time.time()
     results = run_suite(
         keys,
@@ -154,10 +162,14 @@ def cmd_eval(args: argparse.Namespace) -> int:
         razorpay_mode=args.razorpay,
         gateway_failure_rate=args.gateway_failure_rate,
         use_real_llm=args.real_llm,
+        llm_provider=args.provider,
+        jobs=args.jobs,
         progress=_progress if args.verbose else None,
     )
     print(f"done in {time.time() - started:.0f}s\n")
     print(comparison_table(results["runs"], keys, NOT_VALID_RESULTS))
+    print()
+    print(confidence_table(results["runs"], keys))
     print()
     print(ablation_table(results["runs"]))
     print()
@@ -177,7 +189,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .eval.harness import CONFIGS
     from .eval.report import method_breakdown
     from .execute.razorpay_client import RazorpayClient
-    from .llm.anthropic_client import build_backend
+    from .llm import providers
     from .llm.gateway import LLMGateway
     from .policy.engine import PolicyEngine
     from .policy.rules import DEFAULT_RULES
@@ -192,7 +204,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     # Built here rather than through run_agent so the ledger is reachable and
     # --ledger can write the actual chain.
     world = generate_world(seed=args.seed, n_items=args.items, horizon_days=args.horizon)
-    backend = build_backend() if (args.real_llm and config.llm_enabled) else None
+    backend = providers.build(args.provider) if (args.real_llm and config.llm_enabled) else None
     runtime = Runtime(
         world,
         config.factory(),
@@ -250,12 +262,15 @@ def cmd_injection(args: argparse.Namespace) -> int:
     """Run the adversarial corpus through the real reply parser."""
     from datetime import datetime, timezone
 
-    from .llm.anthropic_client import build_backend
+    from .llm import providers
     from .llm.gateway import LLMGateway
     from .llm.injection import INJECTIONS
     from .world.entities import ReplyIntent
 
-    backend = build_backend() if args.real_llm else None
+    backend = providers.build(args.provider) if args.real_llm else None
+    if args.real_llm and backend is None:
+        print(f"no model backend available: {providers.describe()}", file=sys.stderr)
+        return 2
     gateway = LLMGateway(backend=backend)
     now = datetime(2026, 3, 10, 12, 0, tzinfo=timezone.utc)
 
@@ -382,6 +397,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--razorpay", choices=["mock", "live_test"], default="mock")
     p.add_argument("--gateway-failure-rate", type=float, default=0.06)
     p.add_argument("--real-llm", action="store_true")
+    p.add_argument("--provider", choices=["auto", "claude", "gemini", "none"], default="auto")
+    p.add_argument("-j", "--jobs", type=int, default=1,
+                   help="parallel worker processes; ignored for --real-llm runs")
     p.add_argument("--json", default="")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(func=cmd_eval)
@@ -391,11 +409,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agent", default="secondask")
     p.add_argument("--razorpay", choices=["mock", "live_test"], default="mock")
     p.add_argument("--real-llm", action="store_true")
+    p.add_argument("--provider", choices=["auto", "claude", "gemini", "none"], default="auto")
     p.add_argument("--ledger", default="")
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("injection", help="prompt injection suite")
     p.add_argument("--real-llm", action="store_true")
+    p.add_argument("--provider", choices=["auto", "claude", "gemini", "none"], default="auto")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(func=cmd_injection)
 
