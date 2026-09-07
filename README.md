@@ -16,22 +16,23 @@ outcome draws for identical actions.
 | agent | recovered | of value | of items | messages | per message | violations |
 |---|---:|---:|---:|---:|---:|---:|
 | do nothing | ₹0 | 0.0% | 0.0% | 0 | n/a | 0 |
-| fixed schedule `+1h/+24h/+72h` | ₹21.16L | 11.9% | 12.2% | 4,477 | ₹473 | 0 |
-| aggressive, gated | ₹20.17L | 11.4% | 15.8% | 6,332 | ₹318 | 0 |
-| LLM loop, gated | ₹28.87L | 16.3% | 20.7% | 6,173 | ₹468 | 0 |
-| **SecondAsk** | **₹31.78L** | **17.9%** | **20.9%** | **5,275** | **₹603** | **0** |
+| fixed schedule `+1h/+24h/+72h` | ₹18.79L | 10.6% | 11.1% | 4,085 | ₹460 | 0 |
+| aggressive, gated | ₹21.84L | 12.3% | 15.2% | 6,195 | ₹352 | 0 |
+| LLM loop, gated | ₹33.28L | 18.7% | 20.2% | 6,067 | ₹548 | 0 |
+| **SecondAsk** | **₹36.41L** | **20.5%** | **21.4%** | **5,468** | **₹666** | **0** |
 
-Against the industry-default retry schedule: **1.50x the money, 1.71x the items
-recovered, 1.27x per message sent.** Against the same LLM loop with the policy
-gate closed: 1.10x the money using 0.85x the messages.
+Against the industry-default retry schedule: **1.94x the money, 1.93x the items
+recovered, 1.45x per message sent.** Against the same LLM loop with the policy
+gate closed: 1.09x the money using 0.90x the messages.
 
-Zero policy violations, across every run, because they are impossible by
-construction rather than discouraged by a prompt.
+Zero policy violations across every run, because they are impossible by
+construction rather than discouraged by a prompt. 22 rules, checked exhaustively,
+failing closed.
 
 Two figures deliberately absent from that table, both reported in full by
 `python -m secondask eval`:
 
-- An **ungated** LLM loop recovers ₹70.94L, which is 39.9%. It also breaks 23,194
+- An **ungated** LLM loop recovers ₹70.94L, which is 39.9%. It also breaks 23,906
   rules. That is not a result, it is a description of what a system does when
   nobody stops it.
 - The **single-attempt ceiling** on these batches is about 36% of value, so
@@ -77,12 +78,17 @@ point where pursuing the money is worth less than leaving it alone. The goodwill
 term is the one everybody leaves out, and it is why this sends fewer messages
 than the aggressive baseline and recovers more.
 
-**The Constitution** is 19 rules checked before anything happens, failing
+**The Constitution** is 22 rules checked before anything happens, failing
 closed: RBI's 08:00-19:00 contact window on every channel, TRAI DLT template and
-consent rules, the 24-hour e-mandate pre-debit notice, frequency caps, and hard
-stopping rules on dispute, hardship, opt-out and partial payment. A denial that
-is purely about timing returns the earliest legal instant, so an 8 PM attempt
-becomes an 8 AM one rather than a dropped one.
+consent rules, the 24-hour e-mandate pre-debit notice, national holidays and
+major festivals, frequency caps, human review capacity, and hard stopping rules
+on dispute, hardship, opt-out and partial payment.
+
+A denial that is purely about timing returns the earliest legal instant, so an
+8 PM attempt becomes an 8 AM one rather than a dropped one. It does **not**
+return 08:00:00 to everybody: each item is staggered across the first two hours
+of the window by a stable hash of its id. Eleven hours of overnight failures all
+firing in the same second is compliant and is also a self-inflicted outage.
 
 The model does exactly three things: parse inbound replies into a closed enum,
 fill declared slots inside registered templates, and narrate failure clusters
@@ -92,39 +98,86 @@ for a human. **It proposes. It never executes.**
 
 ## The ablation that came out backwards
 
-Removing language understanding **improves** recovery, from ₹31.78L to ₹33.77L.
+Removing language understanding **improves** recovery, from ₹36.41L to ₹37.77L.
 
-I expected the opposite and it is worth being precise about why it happens.
-Understanding replies makes the agent:
+I expected the opposite and it is worth being precise about why. Understanding
+replies makes the agent:
 
-- honour 216 promises to pay, so it stops chasing until the promised date,
-- route 24 disputes to a human instead of continuing to message them,
-- act on an opt-out the moment somebody types STOP rather than waiting until
-  they block the sender.
+- honour 231 promises to pay, 31 of them partial, so it stops chasing until the
+  promised date,
+- route 38 disputes to a human instead of continuing to message them,
+- act on an opt-out the moment somebody types STOP rather than waiting until they
+  block the sender.
 
 All three reduce recovery inside a 21-day measurement window. The version that
 cannot read replies keeps chasing people who already told it to stop, and
-collects slightly more money doing it. Its opt-out count is 27% higher (148
-against 117), and 24 disputing customers get an automated collection sequence
+collects about 4% more money doing it. Its opt-out count is **37% higher (71
+against 52)**, and 38 disputing customers get an automated collection sequence
 instead of a person.
 
-So the reply parser costs about 6% of recovered value and buys a materially
-better customer experience and a defensible position with a regulator. I kept
-it, and I would argue for keeping it, but the number goes in the table as it
-came out rather than being quietly dropped.
+So the reply parser costs roughly 4% of recovered value and buys a materially
+better customer experience and a defensible position with a regulator. I kept it
+and would argue for keeping it, but the number goes in the table as it came out.
+
+Worth noting the gap narrowed after the multi-intent upgrade (it was ₹1.99L on
+the previous single-intent parser, now ₹1.36L) while opt-outs fell from 117 to
+52. Better parsing does not close the gap, because the gap is not a parsing
+problem. It is the cost of behaving well, and it is real.
 
 ## What each component is worth
 
 | ablation | recovered | delta | messages | violations | promises | disputes |
 |---|---:|---:|---:|---:|---:|---:|
-| SecondAsk | ₹31.78L | baseline | 5,275 | 0 | 216 | 24 |
-| remove the Constitution | ₹53.03L | +₹21.25L | 5,307 | **12,864** | 204 | 16 |
-| remove expected value pricing | ₹20.00L | **-₹11.79L** | 2,722 | 0 | 146 | 21 |
-| remove language understanding | ₹33.77L | +₹1.99L | 5,580 | 0 | **0** | **0** |
+| SecondAsk | ₹36.41L | baseline | 5,468 | 0 | 231 | 38 |
+| remove the Constitution | ₹55.65L | +₹19.24L | 5,760 | **8,558** | 201 | 20 |
+| remove expected value pricing | ₹17.88L | **-₹18.53L** | 2,448 | 0 | 120 | 19 |
+| remove language understanding | ₹37.77L | +₹1.36L | 5,762 | 0 | **0** | **0** |
 
-The underwriter is the single largest contributor: removing it costs 37% of
-recovered value. Removing the gate *gains* 67% and 12,864 violations, which is
+The underwriter is by a distance the largest contributor: removing it costs 51%
+of recovered value. Removing the gate *gains* 53% and 8,558 violations, which is
 the honest price of compliance and the reason the gate is not optional.
+
+---
+
+## Production surface
+
+Beyond the simulation, the pieces a deployment needs:
+
+```bash
+python -m secondask serve-api          # FastAPI if installed, stdlib otherwise
+#   POST /webhooks/razorpay   HMAC verified before the body is parsed
+#   POST /inbound/message     redacted, parsed, dispatched. cannot settle anything
+#   GET  /health              liveness and readiness, separated
+#   GET  /metrics             Prometheus text, no dependency
+```
+
+**Webhook verification** does the three things that are usually got wrong:
+verifies the *raw bytes* rather than re-serialised JSON, compares with
+`hmac.compare_digest` rather than `==`, and deduplicates event ids because a
+captured payload stays validly signed forever. A replay returns 409. An unset
+secret rejects everything rather than accepting everything.
+
+**Online learning.** The underwriter takes a single SGD step per observed
+outcome, with a diagonal LinUCB-style optimism bonus, so it adapts without a
+retraining run. Off by default: it mutates the model mid-run, and the benchmark
+is measuring a fixed policy. Determinism holds either way.
+
+**Async execution.** `AsyncRuntime` plans sequentially, executes concurrently
+with a bounded semaphore, and applies results **in planning order**. That last
+part is the whole trick: applying as they complete would make state depend on
+network timing and two runs of one batch would produce different ledgers.
+Verified byte-identical at concurrency 1 and 24.
+
+**Pluggable ledger.** `BaseLedger` with `FileLedger` (default, in-memory plus
+optional durable JSONL append) and `AsyncLedger` (asyncio lock plus an OS file
+lock, so several processes can share one chain without forking it).
+
+**Customer tiering.** Goodwill is priced as
+`base x tier_multiplier x exponential_fatigue`. A four-year customer with a clean
+payment record is *more* expensive to annoy than a signup from yesterday, so the
+agent contacts them less readily. That is the opposite of what a naive revenue
+optimiser does and it is correct: one failed payment is small next to the
+relationship.
 
 ---
 
@@ -170,7 +223,8 @@ python -m secondask run --agent secondask  # one agent, per-method breakdown
 python -m secondask injection              # the adversarial suite
 python -m secondask sweep                  # sensitivity to the goodwill price
 python -m secondask serve                  # the dashboard on :8420
-python -m unittest discover -s tests       # 147 tests
+python -m secondask serve-api              # the ingestion API on :8500
+python -m unittest discover -s tests       # 236 tests
 ```
 
 Optional, and never required:
@@ -256,6 +310,12 @@ Fuller version in [METHODOLOGY.md](METHODOLOGY.md).
    It matters a great deal.
 5. **A single 21-day horizon.** Items that would recover on day 30 count as
    losses. Every agent is charged this equally.
+6. **Concurrency is verified, not benchmarked.** The async path produces
+   identical results at concurrency 1 and 24, but the mock gateway has no real
+   latency, so the wall-clock gain is untested here.
+7. **The holiday calendar expires.** Lunar festival dates are tabulated for 2025
+   to 2027 and need refreshing annually. `/health` reports coverage rather than
+   letting a stale table silently stop matching.
 
 ---
 
@@ -268,15 +328,16 @@ secondask/
   rng.py          seeded streams and common random numbers
   ledger.py       append-only hash chain
   runtime.py      the event loop
+  async_runtime.py  concurrent I/O, deterministic application order
   world/          entities, generator, downtime, counterfactual outcomes
-  policy/         engine, 19 cited rules, DLT templates
-  underwrite/     features, logistic regression, planner, calibration
+  policy/         engine, 22 cited rules, DLT templates, holiday calendar
+  underwrite/     features, logistic regression + online SGD, planner, calibration
   llm/            the model boundary, redaction, injection corpus
-  execute/        executor, Razorpay client, circuit breaker
+  execute/        executor, Razorpay client, circuit breaker, webhook verification
   agents/         SecondAsk, baselines, oracle
   eval/           harness, reporting, analytic bounds
-  server/         dashboard
-tests/            147 tests
+  server/         dashboard, ingestion API
+tests/            236 tests
 ```
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): how it fits together and why the model is
