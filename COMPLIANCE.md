@@ -16,6 +16,7 @@ would need tightening against the current text of the relevant circular.
 |---|---|---|
 | `R-RBI-HOURS` | no customer contact outside 08:00 to 19:00 IST, on any channel | RBI Fair Practices Code and recovery agent conduct norms. Covers calls, SMS and instant messaging, not only voice. |
 | `R-VOICE-WINDOW` | voice calls restricted to 10:00 to 18:00 | our own control, stricter than the regulatory minimum |
+| `R-HOLIDAY-WINDOW` | no automated outreach on a national holiday or major festival | internal control, aligned with RBI fair practice expectations |
 | `R-COOLDOWN` | minimum 6 hours between contacts to one customer | internal control |
 | `R-FREQ-24H` | at most 2 contacts per customer per 24 hours | TRAI TCCCPA preference framework, RBI conduct norms |
 | `R-FREQ-7D` | at most 4 contacts per customer per 7 days | as above |
@@ -36,7 +37,7 @@ would need tightening against the current text of the relevant circular.
 | `R-ESCALATE-ONCE` | an item handed to a human leaves the automated loop | internal control |
 | `R-ESCALATION-CAPACITY` | human review is a fixed daily capacity | internal control |
 
-## Three that are worth explaining
+## Five that are worth explaining
 
 ### `R-SILENT-RETRY-RAIL` is a consent boundary, not a technical detail
 
@@ -68,6 +69,43 @@ The window is implemented as the half-open interval `[08:00, 19:00)`, so
 18:59:59 is permitted and 19:00:00 is not. All four boundary instants are pinned
 in `tests/test_policy.py`.
 
+### `R-HOLIDAY-WINDOW` is a judgment call, not a statute
+
+Nothing in Indian law forbids a dunning SMS on Diwali morning. It is a bad idea
+anyway: it produces a complaint rather than a payment, and it is the sort of
+thing that ends up in a screenshot. Expected value does not price reputational
+damage, so this is a constraint rather than a cost term.
+
+Two carve-outs. Silent retries are exempt, because nobody is contacted and a
+mandate that would have succeeded should not be delayed a day for a reason the
+customer will never observe. Human escalation is exempt, because a person
+deciding to call is a judgment this rule has no business overriding.
+
+The calendar has two tiers with different reliability, and they are kept apart
+deliberately. The three gazetted national holidays plus Christmas are fixed
+Gregorian dates, computed, and correct for any year. Lunar festivals (Holi, the
+two Eids, Dussehra, Diwali, Guru Nanak Jayanti) move annually and are
+**tabulated per year, currently 2025 to 2027**. There is no approximate lunar
+calculation, because presenting the output of one as a compliance control would
+be worse than a table with a known expiry. `/health` reports whether the current
+year is covered, so a stale table surfaces rather than silently stopping matching.
+
+Regional holidays (Pongal, Onam, Bihu, Gudi Padwa) are deliberately absent. They
+would need a state mapping per customer, which this system does not have, and
+guessing is worse than the visible gap.
+
+### Dispatch staggering is a compliance control too
+
+`R-RBI-HOURS` and `R-VOICE-WINDOW` do not defer to the start of the window. They
+defer to a per-item offset spread over the first two hours of it.
+
+The reason is operational rather than legal, and it matters more than it looks.
+Returning `08:00:00` to every deferred action means eleven hours of overnight
+failures fire in the same second. The SMS provider rate-limits, the gateway sees
+a spike two orders of magnitude above steady state, and the compliant behaviour
+has manufactured its own outage. A regulator who asked why ten thousand messages
+left in one second would not be reassured that they were all inside the window.
+
 ### `R-AMOUNT-BOUND` is the load-bearing security control
 
 Everything else in the injection defence is a layer. This is the floor.
@@ -95,6 +133,8 @@ Stated so the gaps are visible rather than assumed covered:
   world has no gender attribute and inventing one to demonstrate a rule would be
   worse than leaving the gap visible.
 - **Cross-border and multi-currency.** INR only throughout.
+- **Lunar festival dates beyond 2027.** The table has a known expiry and reports
+  its own coverage rather than failing quietly.
 - **Grievance redressal routing.** Complaints are counted, not routed.
 
 ## Where the constraint actually lives
@@ -109,4 +149,13 @@ misconfigured:
 
 2. There is **no settlement intent** in the reply parser's output type. A
    customer message cannot mark anything paid, because the enum has no member
-   that means that. Settlement is written only from a payment event.
+   that means that. Settlement is written only from a payment event, and that
+   event must pass HMAC verification, event-id deduplication and an allow-list
+   of events permitted to settle.
+
+3. A **customer-stated amount is never an action amount**. The
+   `PARTIAL_PAYMENT_PROMISE` intent carries `claimed_partial_paise`, which is
+   recorded on the item as a claim and read by nothing that computes an action.
+   `R-AMOUNT-BOUND` would refuse it regardless, and `test_llm_multi_intent`
+   asserts that adversarially: it routes a parsed claim straight into an action
+   and checks the gate refuses it.

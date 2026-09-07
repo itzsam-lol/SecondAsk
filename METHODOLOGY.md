@@ -105,6 +105,58 @@ question; whether it would have worked is a physical one, and the model
 estimates the second. Confusing them would leave the model unable to price a
 legal 8 AM action because its only evidence came from illegal 3 AM ones.
 
+## Online learning, and why the benchmark leaves it off
+
+The underwriter can fold live outcomes in with a single SGD step each, plus a
+diagonal LinUCB-style optimism bonus. That makes the agent adaptive without a
+retraining run, which is the point of a bandit.
+
+It is **off by default**, for a measurement reason rather than a technical one.
+Online updates mutate the model mid-run, so the model that decided the last item
+is not the model that decided the first. The benchmark is trying to measure a
+*fixed policy*; letting the policy drift while measuring it would make the
+comparison against the baselines meaningless.
+
+Determinism survives either way. The loop is closed (model shapes actions, actions
+shape outcomes, outcomes shape model) but every step is deterministic given the
+seed, so a run with online learning enabled still replays exactly.
+
+Two design choices inside it are worth defending:
+
+**Standardisation statistics stay frozen** at their batch values. Letting mean and
+scale drift while the weights are expressed in terms of them silently rescales
+every existing coefficient. That presents as a model slowly forgetting things
+nobody changed, and it is very hard to diagnose after the fact.
+
+**Uncertainty is a diagonal approximation.** Full LinUCB needs the inverse of a
+113x113 design matrix; the diagonal ignores correlation between features and so
+understates uncertainty where features move together. That is the right direction
+to be wrong in for something that spends money on exploration: it explores less
+than full LinUCB would, never more.
+
+## What the interaction terms actually did
+
+Honest answer: not much, and the numbers are reported rather than the intention.
+
+Crossing method family against reason class, source class and time of day took the
+feature vector from 55 to 113. On held-out seeds:
+
+| | before | after |
+|---|---:|---:|
+| AUC | 0.8245 | 0.8195 |
+| ECE | 0.0221 | 0.0184 |
+| Brier skill | +0.175 | +0.151 |
+
+Calibration error improved, discrimination did not. The likely reason is that
+fitting a **separate model per action** already provides every action-by-state
+interaction for free, which is where most of the structure lives, so the
+remaining crosses are largely redundant with what the per-action split captured.
+
+They are kept because better calibration is what this system actually needs (the
+probability is multiplied by a rupee amount), and because the cost is a few
+milliseconds per decision. But the honest summary is that the per-action split
+was the design decision that mattered, and the explicit crosses were not.
+
 ## Calibration, not just discrimination
 
 The underwriter multiplies its probability by a rupee amount and compares the
@@ -185,3 +237,12 @@ a real system.
 6. **The language model path is not exercised by default.** Without an API key
    the deterministic parser runs. Numbers produced with a real model are labelled
    as such; the reproducible defaults are not.
+
+7. **Concurrency is not measured.** `AsyncRuntime` is verified to produce
+   identical results at concurrency 1 and 24, but the mock gateway has no real
+   latency, so the wall-clock benefit of overlapping I/O is untested here. It
+   would show up only against a real endpoint.
+
+8. **The holiday calendar expires.** Lunar festival dates are tabulated for 2025
+   to 2027 and must be refreshed annually. `/health` reports coverage so this
+   surfaces rather than silently ceasing to match.

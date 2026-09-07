@@ -277,6 +277,13 @@ _REPLY_BANK: dict[ReplyIntent, list[str]] = {
         "2 din me ho jayega",
         "paycheck comes on the 1st, I'll do it then",
     ],
+    ReplyIntent.PARTIAL_PAYMENT_PROMISE: [
+        "abhi aadha kar sakta hoon, Rs 500 aaj, baaki 5 tarikh ko",
+        "can pay half now, rest next month",
+        "I can manage Rs 1000 today, the rest after salary",
+        "part payment kar dun? 2 kist me",
+        "only 2000 rupees possible right now",
+    ],
     ReplyIntent.ALREADY_PAID: [
         "already paid this yesterday, check your records",
         "maine payment kar diya hai, screenshot bhej raha hoon",
@@ -356,10 +363,17 @@ def _reply_for(
     elif item._blocker == Blocker.INSTRUMENT_DEAD:
         intent = ReplyIntent.NEEDS_HELP
     elif item._blocker == Blocker.LIQUIDITY:
-        # Genuine hardship in the subset that never becomes liquid.
-        intent = (
-            ReplyIntent.HARDSHIP if item._resolves_at is None else ReplyIntent.PROMISE_TO_PAY
-        )
+        # Genuine hardship in the subset that never becomes liquid. Of those who
+        # will eventually have money, a share offer part of it now: that is what
+        # a real collections inbox looks like, and it is what exercises the
+        # partial-promise path end to end rather than only in a unit test.
+        if item._resolves_at is None:
+            intent = ReplyIntent.HARDSHIP
+        else:
+            split = crn_uniform(world.seed, item.item_id, "partial_split")
+            intent = (
+                ReplyIntent.PARTIAL_PAYMENT_PROMISE if split < 0.30 else ReplyIntent.PROMISE_TO_PAY
+            )
     else:
         pick = crn_uniform(world.seed, item.item_id, "reply_kind", hour_bucket(ts))
         if pick < 0.35:

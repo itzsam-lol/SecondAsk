@@ -25,11 +25,12 @@
                      |
                      v  proposes
         +------------------------+
-        |     THE CONSTITUTION   |   19 rules, checked exhaustively,
+        |     THE CONSTITUTION   |   22 rules, checked exhaustively,
         |     (no LLM)           |   fails closed. RBI contact hours,
         |                        |   TRAI DLT, e-mandate 24h notice,
         |                        |   frequency caps, stopping rules,
-        |                        |   amount binding, idempotency
+        |                        |   amount binding, idempotency,
+        |                        |   holidays, escalation capacity
         +------------------------+
                      |
               allowed|denied -> deferred to the earliest legal time,
@@ -112,7 +113,7 @@ produce anything outside the enum, and nothing in the enum can move money.
 | `world/outcomes.py` | the counterfactual response model | no |
 | `world/downtime.py` | bank outage feed | no |
 | `policy/engine.py` | exhaustive, fail-closed gate | no |
-| `policy/rules.py` | 19 rules, each with a citation | no |
+| `policy/rules.py` | 22 rules, each with a citation | no |
 | `policy/templates.py` | DLT templates with typed slots | no |
 | `underwrite/features.py` | observable features only | no |
 | `underwrite/logreg.py` | logistic regression, pure Python | no |
@@ -126,6 +127,77 @@ produce anything outside the enum, and nothing in the enum can move money.
 | `execute/circuit.py` | breaker and backoff | no |
 | `agents/secondask.py` | sequencing, mandate notices, escalation | no |
 | `runtime.py` | the event loop, state application | no |
+| `async_runtime.py` | concurrent I/O, deterministic application order | no |
+| `policy/holidays.py` | national and festival calendar | no |
+| `execute/webhooks.py` | HMAC verification, dedupe, freshness | no |
+| `execute/async_client.py` | bounded-concurrency gateway and channel I/O | no |
+| `server/api.py` | ingestion service, transport-independent | no |
+| `server/fastapi_app.py` | FastAPI transport (optional) | no |
+
+## Things added in the production pass
+
+### Dispatch is staggered, not scheduled on the hour
+
+Every action deferred out of the forbidden contact window used to return exactly
+`08:00:00`. Overnight failures accumulate for eleven hours and then fire in the
+same second: the gateway sees a spike two orders of magnitude above steady state,
+the SMS provider rate-limits, the breaker opens, and a compliant system has
+manufactured its own outage.
+
+`deferred_start` spreads each item across the first two hours of the window using
+a stable hash of the item id. Measured uniform to within 25% across twelve
+ten-minute buckets, deterministic on replay, and independent of arrival order or
+queue depth, so a replayed run schedules identically.
+
+### Webhooks are verified before they are parsed
+
+`WebhookVerifier` takes raw bytes. The three mistakes that make a signature check
+decorative are each tested:
+
+- verifying re-serialised JSON rather than the bytes that were signed,
+- comparing digests with `==` instead of `hmac.compare_digest`,
+- treating a valid signature as proof of freshness, when a captured payload stays
+  validly signed forever. Event ids are deduplicated; a replay returns 409.
+
+### Online learning, and why it is opt-in
+
+The underwriter can fold live outcomes in with a single SGD step per observation,
+plus a diagonal LinUCB-style uncertainty bonus for optimism under uncertainty.
+The diagonal approximation ignores correlation between features and so understates
+uncertainty, which is the right direction to be wrong in for something that spends
+money on exploration: it explores less than full LinUCB would, never more.
+
+Standardisation statistics stay **frozen** at their batch values. Letting mean and
+scale drift while the weights are expressed in terms of them silently rescales
+every existing coefficient, which presents as a model that slowly forgets things
+nobody changed.
+
+It is off by default. Online updates mutate the model mid-run, so the benchmark
+would no longer be measuring a fixed policy.
+
+### Concurrency that cannot change the answer
+
+`AsyncRuntime` is structured as *plan sequentially, execute concurrently, apply
+in planning order*. Applying results as they complete would make state
+transitions depend on network timing, and two runs of the same batch would
+produce different ledgers. Verified identical at concurrency 1 and 24.
+
+The synchronous `Runtime` remains the path every reported number comes from.
+There is no real I/O in the simulation to overlap, so async there would add
+risk and buy nothing.
+
+### The claim that is not an amount
+
+`PARTIAL_PAYMENT_PROMISE` carries `claimed_partial_paise`: a figure that arrived
+inside a message written by somebody who owes money. It is recorded on the item
+under a name that forces anyone reaching for it to notice what it is, and it is
+never passed to `ProposedAction.amount_paise`. `R-AMOUNT-BOUND` would refuse it
+anyway, and `test_llm_multi_intent` does exactly that adversarially: routes the
+parsed claim straight into an action and asserts the gate refuses it.
+
+Intent precedence is a safety ordering, not a parsing convenience. "I'll pay half
+next week but stop messaging me" carries three intents and the one that governs
+is the stop.
 
 ## Design decisions worth arguing with
 
