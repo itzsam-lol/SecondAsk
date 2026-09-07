@@ -89,12 +89,14 @@ CONFIGS: dict[str, AgentConfig] = {
         policy_enabled=True,
         note="the same LLM loop made compliant, which is the fair comparison",
     ),
-    "oracle": AgentConfig(
-        "oracle", "Oracle (reads latent state)", OracleAgent,
+    "oracle_greedy": AgentConfig(
+        "oracle_greedy", "Perfect information, greedy play", OracleAgent,
         note=(
-            "upper bound, not an agent: it sees the true blocker and the exact "
-            "resolution time. Gated like everything else, so it isolates the "
-            "value of information"
+            "reads latent state, so not a deployable agent. It is also NOT an "
+            "upper bound: it plays greedily one item at a time and under the "
+            "same contact caps it recovers less than SecondAsk. Reported because "
+            "that is a genuine result about greedy play. For a real ceiling see "
+            "'python -m secondask world --bound'"
         ),
     ),
     "secondask": AgentConfig(
@@ -129,13 +131,13 @@ DEFAULT_SUITE = [
     "secondask_no_underwriter",
     "secondask_no_llm",
     "secondask",
-    "oracle",
+    "oracle_greedy",
 ]
 
 # Agents whose recovery figure is not a legitimate result, either because they
 # ignored the policy gate or because they read latent state. Reported, and
 # labelled, so nobody quotes them as an achievement.
-NOT_VALID_RESULTS = frozenset({"b2_aggressive_ungated", "b3_llm_only_ungated", "oracle"})
+NOT_VALID_RESULTS = frozenset({"b2_aggressive_ungated", "b3_llm_only_ungated", "oracle_greedy"})
 
 
 def run_agent(
