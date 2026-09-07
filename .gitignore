@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# run artifacts
+out/
+runs/
+*.jsonl
+!docs/**/*.jsonl
+
+.env
+.env.local
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
