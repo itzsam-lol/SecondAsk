@@ -1,0 +1,69 @@
+seeds=[7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47] items=1000 horizon=21d gateway=mock jobs=10 llm=deterministic
+done in 488s
+
+  agent                         recovered  of value  of items   msgs    per msg          net   viol  opt-out
+------------------------------------------------------------------------------------------------------------
+  b0_do_nothing                        ₹0      0.0%      0.0%      0         ₹0           ₹0      0        0
+  b1_fixed_schedule               ₹62.90L      8.6%     11.7%  16543       ₹380      ₹62.87L      0      105
+  b2_aggressive                   ₹73.61L     10.1%     15.2%  24906       ₹295      ₹72.97L      0      724
+! b2_aggressive_ungated           ₹1.45Cr     19.9%     28.7% 293221        ₹49      ₹1.14Cr 1732998   204327
+  b3_llm_only_gated               ₹1.18Cr     16.2%     20.4%  24373       ₹483      ₹1.15Cr      0      406
+! b3_llm_only_ungated             ₹2.68Cr     36.7%     44.3%  31675       ₹846      ₹2.50Cr  98050     7846
+  secondask_no_policy             ₹2.03Cr     27.8%     27.0%  23248       ₹872      ₹1.96Cr  34151      424
+  secondask_no_underwriter        ₹53.05L      7.3%      8.8%   9892       ₹536      ₹52.73L      0       43
+  secondask_no_llm                ₹1.39Cr     19.1%     21.5%  22919       ₹607      ₹1.37Cr      0      252
+  secondask                       ₹1.32Cr     18.2%     21.4%  21872       ₹605      ₹1.30Cr      0      195
+! oracle_greedy                   ₹89.65L     12.3%     15.5%   4229      ₹2.1K      ₹88.98L      0        4
+
+! marks a figure that is not a legitimate result:
+    b2_aggressive_ungated: the same agent with the gate open, to count what the gate was stopping
+    b3_llm_only_ungated: the common agentic demo shape. Its recovery number is NOT a valid result: it is achieved by taking actions no deployed system is permitted to take, and the violation count is the measure of that
+    oracle_greedy: reads latent state, so not a deployable agent. It is also NOT an upper bound: it plays greedily one item at a time and under the same contact caps it recovers less than SecondAsk. Reported because that is a genuine result about greedy play. For a real ceiling see 'python -m secondask world --bound'
+
+per-seed variability and paired comparison (12 seeds, 95% bootstrap)
+
+agent                              recovered/seed       vs b1 (paired delta)   sign p
+-------------------------------------------------------------------------------------
+b0_do_nothing                        ₹0  [₹0, ₹0] -₹5.24L  [-₹5.92L, -₹4.55L]    0.000
+b1_fixed_schedule          ₹5.24L  [₹4.56L, ₹5.92L]                                    
+b2_aggressive              ₹6.13L  [₹5.36L, ₹6.89L] +₹89.2K  [+₹9.8K, +₹1.65L]    0.388
+b2_aggressive_ungated      ₹12.09L  [₹11.07L, ₹13.16L] +₹6.85L  [+₹5.95L, +₹7.78L]    0.000
+b3_llm_only_gated          ₹9.83L  [₹8.89L, ₹10.86L] +₹4.59L  [+₹3.48L, +₹5.63L]    0.000
+b3_llm_only_ungated        ₹22.34L  [₹19.94L, ₹24.71L] +₹17.10L  [+₹15.02L, +₹19.15L]    0.000
+secondask_no_policy        ₹16.91L  [₹15.57L, ₹18.22L] +₹11.67L  [+₹10.54L, +₹12.77L]    0.000
+secondask_no_underwriter   ₹4.42L  [₹3.42L, ₹5.58L] -₹82.1K  [-₹1.84L, +₹23.0K]    0.146
+secondask_no_llm           ₹11.60L  [₹10.67L, ₹12.58L] +₹6.35L  [+₹5.19L, +₹7.55L]    0.000
+secondask                  ₹11.04L  [₹9.95L, ₹12.07L] +₹5.80L  [+₹4.37L, +₹7.07L]    0.006
+oracle_greedy              ₹7.47L  [₹6.68L, ₹8.31L] +₹2.23L  [+₹1.12L, +₹3.22L]    0.039
+
+secondask against the fixed schedule:
+  money    x2.11  [1.76, 2.51]
+  messages x1.32  [1.30, 1.34]
+
+baseline: secondask                     ₹1.32Cr              21872       0       942       124
+----------------------------------------------------------------------------------------------
+ablation                              recovered      delta    msgs    viol  promises  disputes
+----------------------------------------------------------------------------------------------
+remove the Constitution                 ₹2.03Cr    +70.45L   23248   34151       820        56
+remove expected value pricing           ₹53.05L    -79.40L    9892       0       520        61
+remove language understanding           ₹1.39Cr     +6.70L   22919       0         0         0
+
+secondask: no rule was broken in any run
+
+secondask: actions the gate refused
+------------------------------------------------------------
+  R-ESCALATION-CAPACITY           14203
+  R-MAX-ATTEMPTS                   7035
+  R-FREQ-7D                        6607
+  R-COOLDOWN                       5756
+  R-HOLIDAY-WINDOW                 3748
+  R-RBI-HOURS                      3302
+  R-HONOUR-PROMISE                 2433
+  R-VOICE-WINDOW                   2333
+  R-CHANNEL-EXISTS                 1012
+  R-DLT-CONSENT                     428
+  R-OPTOUT                          313
+  R-FREQ-24H                        242
+  R-EMANDATE-PRENOTIFY              224
+
+wrote out/benchmark12.json
