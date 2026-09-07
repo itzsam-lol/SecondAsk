@@ -84,7 +84,16 @@ class Underwriter:
         action: ActionKind,
     ) -> float:
         model = self.models.get(action.value)
-        if model is None:
+        if model is None or not model.fitted:
+            # No evidence means zero, not a small positive.
+            #
+            # The clamp below has a floor, and applying it here would turn an
+            # action the exploration policy never sampled into one worth
+            # 0.0005 of the balance. On a one lakh rupee item that is fifty
+            # rupees of expected value for an action that costs nothing, so the
+            # planner would propose it, the policy engine would refuse it, and
+            # the proposal budget for that visit would be spent on an action
+            # that cannot ever happen.
             return 0.0
         vector = F.extract(item, customer, now, downtime, bank)
         p = model.predict_one(vector)
@@ -103,7 +112,7 @@ class Underwriter:
         action: ActionKind,
     ) -> list[float]:
         model = self.models.get(action.value)
-        if model is None:
+        if model is None or not model.fitted:
             return [0.0] * len(times)
         out = []
         for now in times:

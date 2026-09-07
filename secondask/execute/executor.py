@@ -58,6 +58,16 @@ class ExecutionResult:
     notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Ledger projection. Deliberately excludes wall-clock latency.
+
+        ``latency_ms`` is measured with ``perf_counter`` and varies between runs
+        on the same machine, let alone across machines. It was originally
+        included here, which quietly broke the reproducibility guarantee: two
+        runs of the same seed produced identical decisions, identical recovered
+        amounts and identical message counts, but different chain heads. The
+        determinism test caught it. Timing stays available on the object for
+        metrics; it does not go into anything that is hashed.
+        """
         return {
             "executed": self.executed,
             "provider_ref": self.provider_ref,
@@ -65,7 +75,6 @@ class ExecutionResult:
             "error": self.error,
             "retryable": self.retryable,
             "delivery_failed": self.delivery_failed,
-            "latency_ms": round(self.latency_ms, 2),
             "message": self.message_text,
             "outcome": self.outcome.to_dict() if self.outcome else None,
         }
