@@ -76,7 +76,12 @@ class SecondAskAgent(Agent):
         self.underwriter = underwriter
         self.model_path = model_path
         self._last_plan: dict[str, planning.Plan] = {}
-        self._pending_debit: dict[str, datetime] = {}
+        # item -> (when the notice matures, the priced plan that justified it).
+        # The valuation is carried across the 24 hour wait rather than recomputed,
+        # so the receipt for the debit shows the numbers the decision was actually
+        # made on. Without this the debit renders as p=0, ev=0, which looks broken
+        # precisely when the agent has done the right thing.
+        self._pending_debit: dict[str, tuple[datetime, float, int]] = {}
         if use_underwriter and self.underwriter is None:
             self.underwriter = self._load_or_train(model_path)
         if not use_underwriter:
@@ -127,12 +132,15 @@ class SecondAskAgent(Agent):
 
         # A mandate debit was planned and the pre-debit notice has now matured.
         pending = self._pending_debit.get(item.item_id)
-        if pending is not None and now >= pending:
+        if pending is not None and now >= pending[0]:
+            _, planned_p, planned_ev = pending
             self._pending_debit.pop(item.item_id, None)
             if not self.blocked(item, ActionKind.MANDATE_DEBIT, now):
                 return self.build(
                     ActionKind.MANDATE_DEBIT, item, customer, now, runtime,
                     rationale="pre-debit notice has matured past 24 hours, debiting",
+                    p_recover=planned_p,
+                    expected_value_paise=planned_ev,
                 )
 
         assert self.underwriter is not None
@@ -161,7 +169,7 @@ class SecondAskAgent(Agent):
         # A mandate debit needs a valid pre-debit notice first. Send the notice
         # now and schedule the debit for just over 24 hours later.
         if best.action == ActionKind.MANDATE_DEBIT and not self._prenotice_valid(item, now):
-            self._pending_debit[item.item_id] = now + timedelta(hours=25)
+            self._pending_debit[item.item_id] = (now + timedelta(hours=25), best.p_recover, best.ev_paise)
             return self.build(
                 ActionKind.PRENOTIFY, item, customer, now, runtime,
                 rationale="pre-debit notice required at least 24h before a mandate debit",
@@ -252,7 +260,7 @@ class SecondAskAgent(Agent):
     def next_visit(self, item, customer, now, runtime) -> Optional[datetime]:
         pending = self._pending_debit.get(item.item_id)
         if pending is not None:
-            return pending
+            return pending[0]
         if not self.use_underwriter:
             if item.attempts >= 5:
                 return None

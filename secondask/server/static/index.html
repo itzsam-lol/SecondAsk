@@ -4,99 +4,290 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SecondAsk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --bg:#0b0f14; --panel:#121821; --panel2:#161d28; --line:#222c3a;
-    --ink:#e6edf5; --muted:#8697ab; --dim:#5d6c7f;
-    --good:#2ec27e; --bad:#e5534b; --warn:#e0a458; --accent:#4c9df5; --accent2:#8b7fe8;
-    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-       font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-  a{color:var(--accent)}
-  header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;
-         align-items:center;gap:20px;flex-wrap:wrap}
-  h1{margin:0;font-size:17px;letter-spacing:.2px}
-  h1 span{color:var(--dim);font-weight:400;margin-left:10px;font-size:13px}
-  .controls{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
-  select,input,button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
-                      border-radius:7px;padding:7px 10px;font-size:13px;font-family:inherit}
-  input{width:74px}
-  button{cursor:pointer;font-weight:600}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#06121f}
-  button.primary:hover{filter:brightness(1.08)}
-  button:disabled{opacity:.5;cursor:not-allowed}
-  label{color:var(--muted);font-size:12px}
+/* ---------------------------------------------------------------------------
+   Fonts load from Google and fall back to a solid system stack, so the page is
+   still correct offline. Nothing about the layout depends on the webfont
+   arriving: the fallbacks are metric-similar and every size is set in rem.
+   --------------------------------------------------------------------------- */
+:root{
+  --sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-  main{padding:20px 24px 60px;max-width:1500px;margin:0 auto}
-  .hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:18px}
-  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-  .stat .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.9px}
-  .stat .v{font-size:27px;font-weight:650;margin-top:6px;font-variant-numeric:tabular-nums;
-           font-family:var(--mono)}
-  .stat .s{color:var(--dim);font-size:12px;margin-top:3px}
-  .stat.big .v{font-size:36px;color:var(--good)}
-  .stat.zero .v{color:var(--good)}
-  .stat.viol .v{color:var(--bad)}
+  /* One canvas, three surfaces, two lines. Restraint in the palette mirrors
+     restraint in the product. */
+  --canvas:#08090C; --surface:#0E1015; --surface-2:#14171E; --surface-3:#1A1E27;
+  --line:#1E222B; --line-2:#2A303C;
 
-  .bar{height:8px;background:var(--panel2);border-radius:5px;overflow:hidden;margin-top:10px}
-  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--good),var(--accent));
-           border-radius:5px;transition:width .18s}
+  --ink:#F4F6FA; --ink-2:#A3ACBB; --ink-3:#69717F;
 
-  .grid{display:grid;grid-template-columns:1.35fr 1fr;gap:16px}
-  @media(max-width:1080px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-  .card > h2{margin:0;padding:12px 16px;font-size:12px;text-transform:uppercase;
-             letter-spacing:.9px;color:var(--muted);border-bottom:1px solid var(--line);
-             display:flex;justify-content:space-between;align-items:center}
-  .card .body{padding:14px 16px}
+  --accent:#5B93F7;         /* the only interactive colour */
+  --money:#3DD68C;          /* reserved for recovered money, nothing else */
+  --alert:#F8746C;          /* reserved for violations, nothing else */
+  --amber:#F0B354;          /* refusals and waits */
+  --violet:#A78BFA;         /* policy rules */
 
-  .timeline{display:flex;align-items:center;gap:12px;padding:12px 16px;
-            border-bottom:1px solid var(--line)}
-  .timeline input[type=range]{flex:1;width:auto;accent-color:var(--accent)}
-  .clock{font-family:var(--mono);color:var(--muted);font-size:12px;min-width:160px}
+  /* A real type scale. The 11px uppercase label was the tell that this was
+     generated: everything sat between 11 and 14 with no hierarchy. */
+  --t-eyebrow:.75rem; --t-small:.8125rem; --t-body:.9375rem; --t-lead:1.0625rem;
+  --t-h3:1.25rem; --t-h2:1.75rem;
 
-  .feed{height:430px;overflow-y:auto;font-family:var(--mono);font-size:12px}
-  .ev{padding:7px 16px;border-bottom:1px solid rgba(34,44,58,.5);display:flex;gap:10px;
-      align-items:baseline;cursor:pointer}
-  .ev:hover{background:var(--panel2)}
-  .ev.sel{background:#1b2534;box-shadow:inset 3px 0 0 var(--accent)}
-  .ev .time{color:var(--dim);min-width:104px}
-  .ev .tag{min-width:132px;font-weight:600}
-  .ev .rest{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-  .ok{color:var(--good)} .no{color:var(--bad)} .warnc{color:var(--warn)}
-  .deny{color:var(--accent2)} .dimc{color:var(--dim)}
+  --r-sm:8px; --r-md:12px; --r-lg:16px;
+  --banner-height:0px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--canvas); color:var(--ink);
+  font-family:var(--sans); font-size:var(--t-body); line-height:1.55;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+/* A very faint grain over the whole canvas. Flat #08090C reads as cheap on an
+   OLED panel; this gives the dark some material. */
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.028;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.015em}
+button,select,input{font-family:inherit}
 
-  table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid rgba(34,44,58,.6)}
-  th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.6px}
-  td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+/* ---------------------------------------------------------- banner --------- */
+#banner{
+  position:sticky; top:0; z-index:60; display:flex; align-items:center;
+  justify-content:center; gap:.75rem; padding:0 3rem; text-align:center;
+  font-size:var(--t-small); font-weight:500; letter-spacing:.005em;
+  height:var(--banner-height); overflow:hidden;
+  transition:height .35s cubic-bezier(.4,0,.2,1);
+  background:var(--surface); border-bottom:1px solid var(--line);
+}
+#banner.open{--banner-height:2.875rem; height:2.875rem}
+.rainbow-1,.rainbow-2{position:absolute; inset:0; z-index:-1}
+.rainbow-1{
+  background:linear-gradient(102deg,#5B93F7 8%,#A78BFA 28%,#3DD68C 52%,#F0B354 74%,#F8746C 92%);
+  filter:blur(48px) saturate(1.3); opacity:.34;
+  animation:drift 22s ease-in-out infinite alternate;
+}
+.rainbow-2{
+  background:linear-gradient(255deg,#3DD68C 0%,transparent 40%,#5B93F7 100%);
+  filter:blur(64px); opacity:.24;
+  animation:drift 17s ease-in-out infinite alternate-reverse;
+}
+@keyframes drift{from{transform:translate3d(-8%,0,0) scale(1.05)}to{transform:translate3d(8%,0,0) scale(1.18)}}
+@media (prefers-reduced-motion:reduce){.rainbow-1,.rainbow-2{animation:none}}
+#banner b{font-weight:700}
+#banner .sep{color:var(--ink-3)}
+#bannerClose{
+  position:absolute; right:.75rem; top:50%; transform:translateY(-50%);
+  background:transparent; border:0; color:var(--ink-2); cursor:pointer;
+  width:1.75rem; height:1.75rem; border-radius:var(--r-sm); display:grid; place-items:center;
+}
+#bannerClose:hover{background:rgba(255,255,255,.08); color:var(--ink)}
 
-  .receipt{font-family:var(--mono);font-size:12px}
-  .receipt .row{display:flex;justify-content:space-between;gap:12px;padding:4px 0;
-                border-bottom:1px solid rgba(34,44,58,.45)}
-  .receipt .row span:first-child{color:var(--muted)}
-  .receipt .msg{margin-top:10px;padding:10px;background:var(--panel2);border-radius:8px;
-                white-space:pre-wrap;color:var(--ink);border:1px solid var(--line)}
-  .receipt .rule{color:var(--accent2)}
-  .empty{color:var(--dim);padding:24px 4px;text-align:center}
-  .note{color:var(--dim);font-size:12px;padding:0 16px 14px}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
-        border:1px solid var(--line);color:var(--muted)}
-  .pill.bad{color:var(--bad);border-color:#4a2523;background:#2a1614}
-  .pill.good{color:var(--good);border-color:#1e4635;background:#10241c}
-  #err{display:none;background:#2a1614;border:1px solid #4a2523;color:#ffb4ae;
-       padding:10px 14px;border-radius:9px;margin-bottom:14px;font-family:var(--mono);font-size:12px}
+/* ---------------------------------------------------------- header --------- */
+header{
+  position:sticky; top:var(--banner-height); z-index:50;
+  display:flex; align-items:center; gap:1.25rem; flex-wrap:wrap;
+  padding:1rem 2rem; border-bottom:1px solid var(--line);
+  background:rgba(8,9,12,.82); backdrop-filter:blur(14px);
+}
+.brand{display:flex; align-items:baseline; gap:.7rem}
+.brand h1{font-size:var(--t-h3); letter-spacing:-.03em}
+.brand .tag{color:var(--ink-3); font-size:var(--t-small)}
+.controls{display:flex; gap:.5rem; align-items:center; margin-left:auto; flex-wrap:wrap}
+.field{display:flex; align-items:center; gap:.45rem}
+.field label{color:var(--ink-3); font-size:var(--t-eyebrow); letter-spacing:.02em}
+select,input[type=number]{
+  background:var(--surface-2); color:var(--ink); border:1px solid var(--line-2);
+  border-radius:var(--r-sm); padding:.5rem .65rem; font-size:var(--t-small);
+}
+input[type=number]{width:5rem}
+select:focus-visible,input:focus-visible,button:focus-visible{
+  outline:2px solid var(--accent); outline-offset:2px
+}
+button{
+  background:var(--surface-2); color:var(--ink); border:1px solid var(--line-2);
+  border-radius:var(--r-sm); padding:.5rem .85rem; font-size:var(--t-small);
+  font-weight:600; cursor:pointer; transition:background .15s,border-color .15s;
+}
+button:hover:not(:disabled){background:var(--surface-3); border-color:#38404f}
+button.primary{background:var(--accent); border-color:var(--accent); color:#04101f}
+button.primary:hover:not(:disabled){filter:brightness(1.1)}
+button:disabled{opacity:.5; cursor:not-allowed}
+
+/* ---------------------------------------------------------- layout --------- */
+main{position:relative; z-index:1; max-width:1560px; margin:0 auto; padding:0 2rem 5rem}
+
+.hero{padding:3rem 0 2.25rem; border-bottom:1px solid var(--line)}
+.eyebrow{
+  font-size:var(--t-eyebrow); text-transform:uppercase; letter-spacing:.14em;
+  color:var(--ink-3); font-weight:600;
+}
+.figure{
+  font-size:clamp(3.25rem,7.5vw,6.5rem); line-height:.94; font-weight:700;
+  letter-spacing:-.045em; font-variant-numeric:tabular-nums;
+  margin:.6rem 0 .5rem; color:var(--money);
+}
+.figure.muted{color:var(--ink-3)}
+.subline{font-size:var(--t-lead); color:var(--ink-2)}
+.subline b{color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums}
+.track{
+  height:.375rem; background:var(--surface-2); border-radius:99px;
+  margin:1.35rem 0 0; overflow:hidden; max-width:44rem;
+}
+.track > i{
+  display:block; height:100%; width:0; border-radius:99px;
+  background:linear-gradient(90deg,var(--money),var(--accent));
+  transition:width .3s cubic-bezier(.4,0,.2,1);
+}
+.trackNote{margin-top:.5rem; font-size:var(--t-eyebrow); color:var(--ink-3)}
+
+.stats{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));
+  gap:0; margin-top:2.25rem; border-top:1px solid var(--line);
+}
+.stat{padding:1.25rem 1.5rem 0 0; border-right:1px solid var(--line)}
+.stat:last-child{border-right:0}
+.stat .k{font-size:var(--t-eyebrow); text-transform:uppercase; letter-spacing:.12em; color:var(--ink-3); font-weight:600}
+.stat .v{font-size:var(--t-h2); font-weight:650; letter-spacing:-.03em; margin-top:.4rem; font-variant-numeric:tabular-nums}
+.stat .s{color:var(--ink-3); font-size:var(--t-small); margin-top:.15rem}
+.stat.good .v{color:var(--money)}
+.stat.bad .v{color:var(--alert)}
+@media(max-width:900px){.stat{border-right:0; border-bottom:1px solid var(--line); padding-bottom:1rem}}
+
+.grid{display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:1.25rem; margin-top:2rem}
+@media(max-width:1120px){.grid{grid-template-columns:1fr}}
+.stack{display:flex; flex-direction:column; gap:1.25rem; min-width:0}
+
+.card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); overflow:hidden}
+.card > header{
+  position:static; background:none; backdrop-filter:none;
+  padding:.9rem 1.15rem; border-bottom:1px solid var(--line);
+  display:flex; align-items:center; justify-content:space-between; gap:1rem;
+}
+.card > header h2{font-size:var(--t-eyebrow); text-transform:uppercase; letter-spacing:.13em; color:var(--ink-2); font-weight:600}
+.card .body{padding:1.15rem}
+.chip{
+  font-family:var(--mono); font-size:var(--t-eyebrow); color:var(--ink-3);
+  border:1px solid var(--line-2); border-radius:99px; padding:.2rem .6rem;
+}
+
+/* ------------------------------------------------------- decision tape ----- */
+.transport{display:flex; align-items:center; gap:.9rem; padding:.85rem 1.15rem; border-bottom:1px solid var(--line)}
+.transport input[type=range]{flex:1; accent-color:var(--accent); cursor:pointer}
+.clock{font-family:var(--mono); font-size:var(--t-small); color:var(--ink-2); min-width:9.5rem; text-align:right}
+
+.tape{height:29rem; overflow-y:auto; font-family:var(--mono); font-size:var(--t-small)}
+.tape::-webkit-scrollbar{width:10px}
+.tape::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:99px; border:3px solid var(--surface)}
+.row{
+  display:grid; grid-template-columns:6.5rem 10.5rem minmax(0,1fr);
+  gap:.85rem; padding:.5rem 1.15rem; cursor:pointer; align-items:baseline;
+  border-bottom:1px solid rgba(30,34,43,.55);
+}
+.row:hover{background:var(--surface-2)}
+.row.sel{background:var(--surface-3); box-shadow:inset 3px 0 0 var(--accent)}
+.row .t{color:var(--ink-3)}
+.row .tag{font-weight:700; letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.row .d{color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.c-ok{color:var(--money)} .c-miss{color:var(--ink-2)} .c-deny{color:var(--violet)}
+.c-wait{color:var(--amber)} .c-dim{color:var(--ink-3)}
+
+/* ---------------------------------------------------------- receipt -------- */
+/* The signature element. The brief asks for an audit trail, so the receipt is
+   drawn as one: monospace, torn top and bottom edge, and the ledger chain
+   fingerprint printed at the foot like a till reference. */
+.receipt-wrap{padding:1.15rem; background:var(--surface)}
+.receipt{
+  background:#F7F5F0; color:#14161C; border-radius:2px;
+  font-family:var(--mono); font-size:.8125rem; line-height:1.6;
+  padding:1.4rem 1.25rem 1.2rem; position:relative;
+  box-shadow:0 10px 30px rgba(0,0,0,.45);
+}
+.receipt::before,.receipt::after{
+  content:""; position:absolute; left:0; right:0; height:9px;
+  background-size:16px 9px; background-repeat:repeat-x;
+}
+.receipt::before{
+  top:-8px;
+  background-image:radial-gradient(circle at 8px 9px, transparent 7px, #F7F5F0 7px);
+}
+.receipt::after{
+  bottom:-8px;
+  background-image:radial-gradient(circle at 8px 0px, transparent 7px, #F7F5F0 7px);
+}
+.receipt .rhead{text-align:center; border-bottom:1px dashed #B9B3A6; padding-bottom:.7rem; margin-bottom:.7rem}
+.receipt .rhead .n{font-weight:700; letter-spacing:.18em; font-size:.75rem}
+.receipt .rhead .s{color:#6A6459; font-size:.6875rem; letter-spacing:.04em}
+.receipt .l{display:flex; justify-content:space-between; gap:1rem; padding:.16rem 0}
+.receipt .l span:first-child{color:#6A6459}
+.receipt .l span:last-child{text-align:right; word-break:break-word}
+.receipt .div{border-top:1px dashed #B9B3A6; margin:.7rem 0}
+.receipt .note{background:#EDE9E0; padding:.6rem .7rem; border-radius:2px; margin-top:.6rem; white-space:pre-wrap; font-size:.75rem}
+.receipt .verdict{font-weight:700; text-align:center; padding:.5rem 0; letter-spacing:.06em}
+.receipt .v-ok{color:#0B7A4B} .receipt .v-no{color:#A32A22} .receipt .v-deny{color:#5B3AA8}
+.receipt .foot{
+  border-top:1px dashed #B9B3A6; margin-top:.75rem; padding-top:.6rem;
+  font-size:.6875rem; color:#6A6459; text-align:center; word-break:break-all; line-height:1.5;
+}
+.receipt .barcode{
+  height:34px; margin-top:.6rem;
+  background:repeating-linear-gradient(90deg,#14161C 0 2px,transparent 2px 4px,#14161C 4px 5px,transparent 5px 9px,#14161C 9px 12px,transparent 12px 14px);
+  opacity:.85;
+}
+
+/* ---------------------------------------------------------- tables --------- */
+table{width:100%; border-collapse:collapse; font-size:var(--t-small)}
+th,td{text-align:left; padding:.5rem .55rem; border-bottom:1px solid rgba(30,34,43,.7)}
+th{color:var(--ink-3); font-weight:600; font-size:var(--t-eyebrow); text-transform:uppercase; letter-spacing:.1em}
+td.n{text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+td.rule{font-family:var(--mono); color:var(--violet); font-size:var(--t-eyebrow)}
+
+.empty{color:var(--ink-3); padding:2.5rem 1rem; text-align:center; font-size:var(--t-small)}
+.note{color:var(--ink-3); font-size:var(--t-eyebrow); padding:0 1.15rem 1rem; line-height:1.6}
+#err{
+  display:none; background:#231315; border:1px solid #4A2523; color:#FFB4AE;
+  padding:.8rem 1rem; border-radius:var(--r-md); margin:1.25rem 0 0;
+  font-family:var(--mono); font-size:var(--t-small);
+}
+.spinner{
+  width:.9rem; height:.9rem; border:2px solid rgba(255,255,255,.28);
+  border-top-color:#04101f; border-radius:50%; display:inline-block;
+  animation:spin .7s linear infinite; vertical-align:-2px; margin-right:.4rem;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.skeleton{
+  background:linear-gradient(90deg,var(--surface-2) 25%,var(--surface-3) 37%,var(--surface-2) 63%);
+  background-size:400% 100%; animation:shimmer 1.3s ease-in-out infinite; border-radius:var(--r-sm);
+}
+@keyframes shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
 </style>
 </head>
 <body>
+
+<div id="banner" class="open">
+  <div class="rainbow-1"></div><div class="rainbow-2"></div>
+  <span><b>Track 03 &middot; AI Revenue Recovery</b></span>
+  <span class="sep">/</span>
+  <span>every money action is priced before it happens, and every one has a receipt</span>
+  <button id="bannerClose" aria-label="Close banner">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
+</div>
+
 <header>
-  <h1>SecondAsk <span>revenue recovery, priced per attempt</span></h1>
+  <div class="brand">
+    <h1>SecondAsk</h1>
+    <span class="tag">revenue recovery, priced per attempt</span>
+  </div>
   <div class="controls">
-    <label>agent</label><select id="agent"></select>
-    <label>seed</label><input id="seed" type="number" value="7">
-    <label>items</label><input id="items" type="number" value="400">
+    <div class="field"><label for="agent">agent</label><select id="agent"></select></div>
+    <div class="field"><label for="seed">seed</label><input id="seed" type="number" value="7"></div>
+    <div class="field"><label for="items">items</label><input id="items" type="number" value="400"></div>
     <button class="primary" id="go">Run batch</button>
   </div>
 </header>
@@ -104,45 +295,54 @@
 <main>
   <div id="err"></div>
 
-  <div class="hero">
-    <div class="stat big"><div class="k">Recovered</div><div class="v" id="recovered">--</div>
-      <div class="s" id="recoveredSub">press Run batch</div>
-      <div class="bar"><i id="recoveredBar" style="width:0"></i></div></div>
-    <div class="stat"><div class="k">At risk</div><div class="v" id="atrisk">--</div>
-      <div class="s" id="atriskSub">&nbsp;</div></div>
-    <div class="stat"><div class="k">Messages sent</div><div class="v" id="msgs">--</div>
-      <div class="s" id="msgsSub">&nbsp;</div></div>
-    <div class="stat"><div class="k">Per message</div><div class="v" id="permsg">--</div>
-      <div class="s">recovered per message sent</div></div>
-    <div class="stat zero" id="violCard"><div class="k">Policy violations</div>
-      <div class="v" id="viol">--</div><div class="s" id="violSub">&nbsp;</div></div>
-  </div>
+  <section class="hero">
+    <div class="eyebrow">Recovered</div>
+    <div class="figure muted" id="recovered">&#8377;0</div>
+    <div class="subline" id="subline">Press <b>Run batch</b> to replay a recovery run.</div>
+    <div class="track"><i id="bar"></i></div>
+    <div class="trackNote" id="trackNote">&nbsp;</div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">At risk</div><div class="v" id="atrisk">&mdash;</div><div class="s" id="atriskSub">&nbsp;</div></div>
+      <div class="stat"><div class="k">Messages sent</div><div class="v" id="msgs">&mdash;</div><div class="s" id="msgsSub">&nbsp;</div></div>
+      <div class="stat"><div class="k">Per message</div><div class="v" id="permsg">&mdash;</div><div class="s">recovered per message</div></div>
+      <div class="stat" id="violStat"><div class="k">Policy violations</div><div class="v" id="viol">&mdash;</div><div class="s" id="violSub">&nbsp;</div></div>
+      <div class="stat"><div class="k">Refused by the gate</div><div class="v" id="refused">&mdash;</div><div class="s">actions the rules stopped</div></div>
+    </div>
+  </section>
 
   <div class="grid">
     <div class="card">
-      <h2>Decision stream <span class="pill" id="feedCount"></span></h2>
-      <div class="timeline">
+      <header>
+        <h2>Decision stream</h2>
+        <span class="chip" id="feedCount">no run yet</span>
+      </header>
+      <div class="transport">
         <button id="play">Play</button>
-        <input type="range" id="scrub" min="0" max="0" value="0">
-        <div class="clock" id="clock">--</div>
+        <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Timeline">
+        <span class="clock" id="clock">&mdash;</span>
       </div>
-      <div class="feed" id="feed"><div class="empty">No run yet.</div></div>
-      <div class="note">Every line comes from the hash-chained ledger. The dashboard cannot
-        show a number the audit trail does not support. Click a line for its receipt.</div>
+      <div class="tape" id="tape"><div class="empty">No run yet.</div></div>
+      <div class="note">Every line is read back from the hash-chained ledger, so this view
+        cannot show a number the audit trail does not support. Click any line for its receipt.</div>
     </div>
 
-    <div>
-      <div class="card" style="margin-bottom:16px">
-        <h2>Decision receipt</h2>
-        <div class="body receipt" id="receipt"><div class="empty">Select a decision.</div></div>
-      </div>
-      <div class="card" style="margin-bottom:16px">
-        <h2>By method</h2>
-        <div class="body"><table id="methods"><tbody></tbody></table></div>
-      </div>
+    <div class="stack">
       <div class="card">
-        <h2>What the gate refused</h2>
-        <div class="body"><table id="denials"><tbody></tbody></table></div>
+        <header><h2>Decision receipt</h2><span class="chip" id="chainChip">chain</span></header>
+        <div class="receipt-wrap" id="receiptWrap">
+          <div class="empty">Select a decision from the stream.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <header><h2>Recovery by method</h2></header>
+        <div class="body"><table id="methods"><tbody><tr><td class="empty">&mdash;</td></tr></tbody></table></div>
+      </div>
+
+      <div class="card">
+        <header><h2>What the gate refused</h2></header>
+        <div class="body"><table id="denials"><tbody><tr><td class="empty">&mdash;</td></tr></tbody></table></div>
       </div>
     </div>
   </div>
@@ -150,49 +350,80 @@
 
 <script>
 const $ = id => document.getElementById(id);
-let RUN = null, TIMER = null, CURSOR = 0;
+let RUN = null, TIMER = null, CURSOR = 0, ANIM = null;
 
+/* ---------- banner, dismissal persisted the way the reference does ---------- */
+const BANNER_KEY = "secondask-banner-track03";
+try { if (localStorage.getItem(BANNER_KEY) === "true") $("banner").classList.remove("open"); } catch (e) {}
+$("bannerClose").onclick = () => {
+  $("banner").classList.remove("open");
+  try { localStorage.setItem(BANNER_KEY, "true"); } catch (e) {}
+};
+
+/* ---------- formatting ---------- */
 function inr(paise, compact){
-  const neg = paise < 0; let n = Math.abs(paise) / 100;
+  const neg = paise < 0, n = Math.abs(paise) / 100;
+  let out;
   if (compact){
-    let out;
     if (n >= 1e7) out = (n/1e7).toFixed(2) + "Cr";
     else if (n >= 1e5) out = (n/1e5).toFixed(2) + "L";
     else if (n >= 1000) out = (n/1000).toFixed(1) + "K";
     else out = group(Math.round(n));
-    return (neg?"-":"") + "₹" + out;
-  }
-  return (neg?"-":"") + "₹" + group(Math.round(n));
+  } else out = group(Math.round(n));
+  return (neg ? "-" : "") + "₹" + out;
 }
 function group(n){
   const s = String(n); if (s.length <= 3) return s;
-  let head = s.slice(0,-3), tail = s.slice(-3), parts = [];
+  let head = s.slice(0,-3); const tail = s.slice(-3); const parts = [];
   while (head.length > 2){ parts.unshift(head.slice(-2)); head = head.slice(0,-2); }
   if (head) parts.unshift(head);
   return parts.join(",") + "," + tail;
 }
-function pct(a,b){ return b ? (100*a/b).toFixed(1) + "%" : "n/a"; }
-function esc(s){ return String(s==null?"":s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
-function shortTime(iso){ return iso ? iso.slice(5,16).replace("T"," ") : "--"; }
+const pct = (a,b) => b ? (100*a/b).toFixed(1) + "%" : "n/a";
+const esc = s => String(s == null ? "" : s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+const clock = iso => iso ? iso.slice(5,16).replace("T"," ") : "—";
 
-async function loadAgents(){
-  const res = await fetch("/api/agents");
-  const data = await res.json();
-  const sel = $("agent");
-  data.agents.forEach(a => {
-    const opt = document.createElement("option");
-    opt.value = a.key;
-    opt.textContent = a.label + (a.gated ? "" : "  [ungated]");
-    if (a.key === "secondask") opt.selected = true;
-    sel.appendChild(opt);
-  });
+/* Count-up on the hero. Eased, and it respects reduced-motion. */
+function countTo(target, max){
+  if (ANIM) cancelAnimationFrame(ANIM);
+  const el = $("recovered");
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const from = 0, dur = reduce ? 0 : 900, t0 = performance.now();
+  el.classList.toggle("muted", target === 0);
+  const tick = now => {
+    const k = dur ? Math.min(1, (now - t0) / dur) : 1;
+    const eased = 1 - Math.pow(1 - k, 3);
+    const value = from + (target - from) * eased;
+    el.textContent = inr(value, true);
+    $("bar").style.width = Math.min(100, 100 * value / Math.max(1, max)) + "%";
+    if (k < 1) ANIM = requestAnimationFrame(tick);
+  };
+  ANIM = requestAnimationFrame(tick);
 }
+
+/* ---------- boot ---------- */
+async function loadAgents(){
+  try {
+    const data = await (await fetch("/api/agents")).json();
+    const sel = $("agent");
+    data.agents.forEach(a => {
+      const o = document.createElement("option");
+      o.value = a.key;
+      o.textContent = a.label + (a.gated ? "" : "  · ungated");
+      if (a.key === "secondask") o.selected = true;
+      sel.appendChild(o);
+    });
+  } catch (e) { showError("could not reach the server: " + e.message); }
+}
+function showError(msg){ $("err").style.display = "block"; $("err").textContent = msg; }
 
 async function run(){
   const btn = $("go");
-  btn.disabled = true; btn.textContent = "Running...";
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Running';
   $("err").style.display = "none";
   stop();
+  $("tape").innerHTML = '<div class="empty">Simulating the batch. Three weeks of recovery, a few seconds of wall clock.</div>';
   try {
     const q = new URLSearchParams({agent:$("agent").value, seed:$("seed").value, items:$("items").value});
     const res = await fetch("/api/run?" + q);
@@ -201,8 +432,8 @@ async function run(){
     RUN = data;
     render();
   } catch (e){
-    $("err").style.display = "block";
-    $("err").textContent = "run failed: " + e.message;
+    showError("run failed: " + e.message);
+    $("tape").innerHTML = '<div class="empty">No run.</div>';
   } finally {
     btn.disabled = false; btn.textContent = "Run batch";
   }
@@ -210,144 +441,181 @@ async function run(){
 
 function render(){
   const s = RUN.summary;
-  $("recovered").textContent = inr(s.recovered_paise, true);
-  $("recoveredSub").textContent =
-    pct(s.recovered_paise, s.at_risk_paise) + " of value, " +
-    pct(s.items_recovered, s.items_total) + " of items";
-  $("recoveredBar").style.width = Math.min(100, 100*s.recovered_paise/Math.max(1,s.at_risk_paise)) + "%";
+  countTo(s.recovered_paise, s.at_risk_paise);
+  $("subline").innerHTML =
+    `<b>${pct(s.recovered_paise, s.at_risk_paise)}</b> of value recovered &nbsp;&middot;&nbsp; ` +
+    `<b>${pct(s.items_recovered, s.items_total)}</b> of items &nbsp;&middot;&nbsp; ` +
+    `net <b>${inr(s.net_paise, true)}</b> after cost of contact`;
+  $("trackNote").textContent =
+    `${RUN.label} · seed ${RUN.seed} · ${s.items_total} failed payments over ${RUN.horizon} days`;
+
   $("atrisk").textContent = inr(s.at_risk_paise, true);
   $("atriskSub").textContent = s.items_total + " failed payments";
-  $("msgs").textContent = s.messages_sent;
-  $("msgsSub").textContent = s.opt_outs + " opt-outs, " + s.complaints + " complaints";
-  $("permsg").textContent = s.messages_sent ? inr(s.recovered_paise/s.messages_sent, true) : "n/a";
+  $("msgs").textContent = s.messages_sent.toLocaleString();
+  $("msgsSub").textContent = `${s.opt_outs} opt-outs · ${s.complaints} complaints`;
+  $("permsg").textContent = s.messages_sent ? inr(s.recovered_paise / s.messages_sent, true) : "n/a";
 
   const viol = s.total_violations;
-  $("viol").textContent = viol;
-  $("violCard").className = "stat " + (viol ? "viol" : "zero");
-  $("violSub").textContent = viol
-    ? (s.violating_actions + " actions broke a rule") : "gate held on every action";
+  $("viol").textContent = viol.toLocaleString();
+  $("violStat").className = "stat " + (viol ? "bad" : "good");
+  $("violSub").textContent = viol ? `${s.violating_actions} actions broke a rule` : "the gate held on every action";
 
-  const rows = Object.entries(RUN.by_method)
-    .sort((a,b) => b[1].at_risk - a[1].at_risk)
-    .map(([m,v]) => `<tr><td>${esc(m)}</td>
-      <td class="num">${inr(v.at_risk,true)}</td>
-      <td class="num">${inr(v.recovered,true)}</td>
-      <td class="num">${pct(v.recovered,v.at_risk)}</td>
-      <td class="num dimc">${v.n_rec}/${v.n}</td></tr>`).join("");
+  const refusedTotal = Object.values(s.policy_denials).reduce((a,b) => a+b, 0);
+  $("refused").textContent = refusedTotal.toLocaleString();
+  $("chainChip").textContent = (RUN.ledger_head || "").slice(0,12) || "chain";
+
+  const methods = Object.entries(RUN.by_method).sort((a,b) => b[1].at_risk - a[1].at_risk);
   $("methods").innerHTML =
-    "<thead><tr><th>method</th><th class='num'>at risk</th><th class='num'>recovered</th>" +
-    "<th class='num'>of value</th><th class='num'>items</th></tr></thead><tbody>" + rows + "</tbody>";
+    "<thead><tr><th>method</th><th class='n'>at risk</th><th class='n'>recovered</th>" +
+    "<th class='n'>value</th><th class='n'>items</th></tr></thead><tbody>" +
+    methods.map(([m,v]) => `<tr><td>${esc(m)}</td><td class="n">${inr(v.at_risk,true)}</td>
+      <td class="n" style="color:var(--money)">${inr(v.recovered,true)}</td>
+      <td class="n">${pct(v.recovered,v.at_risk)}</td>
+      <td class="n c-dim">${v.n_rec}/${v.n}</td></tr>`).join("") + "</tbody>";
 
   const den = Object.entries(s.policy_denials).sort((a,b) => b[1]-a[1]);
   $("denials").innerHTML = den.length
-    ? "<thead><tr><th>rule</th><th class='num'>refused</th></tr></thead><tbody>" +
-      den.map(([r,c]) => `<tr><td class="rule">${esc(r)}</td><td class="num">${c}</td></tr>`).join("") +
-      "</tbody>"
-    : "<tbody><tr><td class='dimc'>nothing was refused</td></tr></tbody>";
+    ? "<thead><tr><th>rule</th><th class='n'>refused</th></tr></thead><tbody>" +
+      den.map(([r,c]) => `<tr><td class="rule">${esc(r)}</td><td class="n">${c.toLocaleString()}</td></tr>`).join("") + "</tbody>"
+    : "<tbody><tr><td class='empty'>nothing was refused</td></tr></tbody>";
 
-  $("scrub").max = Math.max(0, RUN.events.length);
-  $("scrub").value = RUN.events.length;
-  CURSOR = RUN.events.length;
-  drawFeed();
+  $("scrub").max = RUN.events.length;
+  $("scrub").value = CURSOR = RUN.events.length;
+  drawTape();
+  autoSelect();
 }
 
-function classFor(e){
-  if (e.kind === "policy_denied") return "deny";
-  if (e.kind === "closed") return "dimc";
-  if (e.kind === "wait") return "dimc";
-  return e.success ? "ok" : "warnc";
-}
-function labelFor(e){
-  if (e.kind === "policy_denied") return "REFUSED";
-  if (e.kind === "closed") return "closed";
-  if (e.kind === "wait") return "wait";
-  return (e.success ? "+ " : "  ") + (e.action || "");
-}
-
-function drawFeed(){
-  const feed = $("feed");
-  if (!RUN || !RUN.events.length){ feed.innerHTML = "<div class='empty'>No events.</div>"; return; }
-  const upto = RUN.events.slice(0, CURSOR);
-  const window_ = upto.slice(-260);
-  feed.innerHTML = window_.map((e,i) => {
-    const idx = upto.length - window_.length + i;
-    let rest = e.why || "";
-    if (e.kind === "policy_denied" && e.rules) rest = e.rules.join(", ") + " :: " + rest;
-    if (e.kind === "action" && e.recovered) rest = inr(e.recovered,true) + " recovered :: " + rest;
-    return `<div class="ev" data-i="${idx}">
-      <span class="time">${shortTime(e.t)}</span>
-      <span class="tag ${classFor(e)}">${esc(labelFor(e))}</span>
-      <span class="rest">${esc(rest)}</span></div>`;
-  }).join("");
-  feed.scrollTop = feed.scrollHeight;
-  $("feedCount").textContent = upto.length + " / " + RUN.events.length + " events";
-  const last = upto[upto.length-1];
-  $("clock").textContent = last ? shortTime(last.t) + " IST-ish (UTC)" : "--";
-  if (last) {
-    $("recovered").textContent = inr(last.cumulative || 0, true);
-    $("recoveredBar").style.width =
-      Math.min(100, 100*(last.cumulative||0)/Math.max(1,RUN.at_risk_paise)) + "%";
-  }
-  feed.querySelectorAll(".ev").forEach(node => {
-    node.onclick = () => showReceipt(Number(node.dataset.i), node);
+function autoSelect(){
+  // Open on the most instructive decision rather than an empty panel: the
+  // largest successful recovery if there is one, otherwise the first refusal,
+  // otherwise anything. A screenshot of this page should never show a blank.
+  let best = -1, bestValue = -1, firstDenial = -1;
+  RUN.events.forEach((e, i) => {
+    if (e.kind === "action" && e.success && (e.recovered || 0) > bestValue){
+      bestValue = e.recovered || 0; best = i;
+    }
+    if (firstDenial < 0 && e.kind === "policy_denied") firstDenial = i;
   });
+  const pick = best >= 0 ? best : (firstDenial >= 0 ? firstDenial : 0);
+  const node = document.querySelector('.row[data-i="' + pick + '"]');
+  receipt(pick, node);
+  if (node) node.scrollIntoView({block:"center"});
 }
 
-function showReceipt(index, node){
-  document.querySelectorAll(".ev.sel").forEach(n => n.classList.remove("sel"));
+const rowClass = e =>
+  e.kind === "policy_denied" ? "c-deny" :
+  e.kind === "wait" ? "c-wait" :
+  e.kind === "closed" ? "c-dim" :
+  e.success ? "c-ok" : "c-miss";
+
+const rowLabel = e =>
+  e.kind === "policy_denied" ? "REFUSED" :
+  e.kind === "closed" ? "closed" :
+  e.kind === "wait" ? "wait" :
+  (e.success ? "✓ " : "  ") + (e.action || "");
+
+function drawTape(){
+  const tape = $("tape");
+  if (!RUN || !RUN.events.length){ tape.innerHTML = "<div class='empty'>No events.</div>"; return; }
+  const upto = RUN.events.slice(0, CURSOR);
+  const win = upto.slice(-240);
+  tape.innerHTML = win.map((e,i) => {
+    const idx = upto.length - win.length + i;
+    let d = e.why || "";
+    if (e.kind === "policy_denied" && e.rules) d = e.rules.join(", ") + "  " + d;
+    if (e.kind === "action" && e.recovered) d = inr(e.recovered,true) + " recovered  ·  " + d;
+    return `<div class="row" data-i="${idx}">
+      <span class="t">${clock(e.t)}</span>
+      <span class="tag ${rowClass(e)}">${esc(rowLabel(e))}</span>
+      <span class="d">${esc(d)}</span></div>`;
+  }).join("");
+  tape.scrollTop = tape.scrollHeight;
+  $("feedCount").textContent = upto.length.toLocaleString() + " / " + RUN.events.length.toLocaleString() + " events";
+  const last = upto[upto.length-1];
+  $("clock").textContent = last ? clock(last.t) + " UTC" : "—";
+  if (last){
+    const value = last.cumulative || 0;
+    $("recovered").textContent = inr(value, true);
+    $("recovered").classList.toggle("muted", value === 0);
+    $("bar").style.width = Math.min(100, 100*value/Math.max(1, RUN.at_risk_paise)) + "%";
+  }
+  tape.querySelectorAll(".row").forEach(n => { n.onclick = () => receipt(+n.dataset.i, n); });
+}
+
+function receipt(index, node){
+  document.querySelectorAll(".row.sel").forEach(n => n.classList.remove("sel"));
   if (node) node.classList.add("sel");
   const e = RUN.events[index];
-  if (!e){ return; }
-  const rows = [];
-  const add = (k,v) => rows.push(`<div class="row"><span>${esc(k)}</span><span>${v}</span></div>`);
-  add("item", esc(e.item));
-  add("at", esc(e.t));
-  add("kind", esc(e.kind));
-  if (e.action) add("action", esc(e.action));
-  if (e.channel) add("channel", esc(e.channel));
-  if (e.amount) add("amount", inr(e.amount));
+  if (!e) return;
+
+  const L = (k,v) => `<div class="l"><span>${esc(k)}</span><span>${v}</span></div>`;
+  let html = `<div class="receipt">
+    <div class="rhead">
+      <div class="n">SECONDASK</div>
+      <div class="s">DECISION RECEIPT</div>
+    </div>`;
+
+  html += L("item", esc(e.item));
+  html += L("timestamp", esc(e.t));
+  if (e.action) html += L("action", esc(e.action));
+  if (e.channel && e.channel !== "none") html += L("channel", esc(e.channel));
+  if (e.amount) html += L("outstanding", inr(e.amount));
+
   if (e.kind === "action"){
-    add("p(recover)", (e.p||0).toFixed(4));
-    add("expected value", inr(e.ev||0));
-    add("outcome", e.success
-      ? `<span class="ok">recovered ${inr(e.recovered)}</span>`
-      : `<span class="warnc">no recovery</span>`);
+    html += `<div class="div"></div>`;
+    html += L("p(recover)", (e.p || 0).toFixed(4));
+    html += L("expected value", inr(e.ev || 0));
+    html += `<div class="div"></div>`;
+    html += e.success
+      ? `<div class="verdict v-ok">RECOVERED ${esc(inr(e.recovered))}</div>`
+      : `<div class="verdict v-no">NO RECOVERY</div>`;
+  } else if (e.kind === "policy_denied"){
+    html += `<div class="div"></div>`;
+    html += L("rules broken", esc((e.rules || []).join(", ")));
+    html += `<div class="verdict v-deny">REFUSED BY THE GATE</div>`;
+  } else if (e.kind === "wait"){
+    html += `<div class="div"></div>`;
+    html += L("holding until", esc(clock(e.until)));
+  } else if (e.kind === "closed"){
+    html += `<div class="div"></div>`;
+    html += L("final state", esc(e.state));
   }
-  if (e.rules && e.rules.length)
-    add("rules broken", `<span class="rule">${esc(e.rules.join(", "))}</span>`);
-  if (e.state) add("final state", esc(e.state));
-  if (e.until) add("waiting until", esc(e.until));
-  let html = rows.join("");
-  if (e.why) html += `<div class="msg">${esc(e.why)}</div>`;
-  if (e.message) html += `<div class="msg">${esc(e.message)}</div>`;
+
+  if (e.why) html += `<div class="note">${esc(e.why)}</div>`;
+  if (e.message) html += `<div class="note">${esc(e.message)}</div>`;
   if (e.reply){
-    html += `<div class="msg"><b>customer replied:</b> ${esc(e.reply)}` +
-            (e.reply_parsed ? `\n<b>parsed as:</b> ${esc(e.reply_parsed)}` : "") + `</div>`;
+    html += `<div class="note"><b>customer replied</b>\n${esc(e.reply)}` +
+            (e.reply_parsed ? `\n\n<b>parsed as</b>  ${esc(e.reply_parsed)}` : "") + `</div>`;
   }
-  $("receipt").innerHTML = html;
+
+  html += `<div class="barcode"></div>
+    <div class="foot">LEDGER CHAIN HEAD<br>${esc(RUN.ledger_head || "")}</div>
+  </div>`;
+  $("receiptWrap").innerHTML = html;
 }
 
 function play(){
-  if (TIMER){ stop(); return; }
+  if (TIMER) return stop();
   if (CURSOR >= RUN.events.length) CURSOR = 0;
   $("play").textContent = "Pause";
-  const step = Math.max(1, Math.round(RUN.events.length / 260));
+  const step = Math.max(1, Math.round(RUN.events.length / 240));
   TIMER = setInterval(() => {
     CURSOR = Math.min(RUN.events.length, CURSOR + step);
     $("scrub").value = CURSOR;
-    drawFeed();
+    drawTape();
     if (CURSOR >= RUN.events.length) stop();
-  }, 40);
+  }, 42);
 }
-function stop(){
-  if (TIMER) clearInterval(TIMER);
-  TIMER = null;
-  $("play").textContent = "Play";
-}
+function stop(){ if (TIMER) clearInterval(TIMER); TIMER = null; $("play").textContent = "Play"; }
 
 $("go").onclick = run;
 $("play").onclick = () => { if (RUN) play(); };
-$("scrub").oninput = ev => { stop(); CURSOR = Number(ev.target.value); drawFeed(); };
+$("scrub").oninput = ev => { stop(); CURSOR = +ev.target.value; drawTape(); };
+document.addEventListener("keydown", ev => {
+  if (ev.target.tagName === "INPUT" || ev.target.tagName === "SELECT") return;
+  if (ev.code === "Space" && RUN){ ev.preventDefault(); play(); }
+  if (ev.key === "r" && !ev.metaKey && !ev.ctrlKey) run();
+});
 loadAgents();
 </script>
 </body>
