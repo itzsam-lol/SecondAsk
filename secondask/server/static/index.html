@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SecondAsk</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --panel2:#161d28; --line:#222c3a;
+    --ink:#e6edf5; --muted:#8697ab; --dim:#5d6c7f;
+    --good:#2ec27e; --bad:#e5534b; --warn:#e0a458; --accent:#4c9df5; --accent2:#8b7fe8;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent)}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;
+         align-items:center;gap:20px;flex-wrap:wrap}
+  h1{margin:0;font-size:17px;letter-spacing:.2px}
+  h1 span{color:var(--dim);font-weight:400;margin-left:10px;font-size:13px}
+  .controls{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
+  select,input,button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+                      border-radius:7px;padding:7px 10px;font-size:13px;font-family:inherit}
+  input{width:74px}
+  button{cursor:pointer;font-weight:600}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#06121f}
+  button.primary:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  label{color:var(--muted);font-size:12px}
+
+  main{padding:20px 24px 60px;max-width:1500px;margin:0 auto}
+  .hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:18px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .stat .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.9px}
+  .stat .v{font-size:27px;font-weight:650;margin-top:6px;font-variant-numeric:tabular-nums;
+           font-family:var(--mono)}
+  .stat .s{color:var(--dim);font-size:12px;margin-top:3px}
+  .stat.big .v{font-size:36px;color:var(--good)}
+  .stat.zero .v{color:var(--good)}
+  .stat.viol .v{color:var(--bad)}
+
+  .bar{height:8px;background:var(--panel2);border-radius:5px;overflow:hidden;margin-top:10px}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--good),var(--accent));
+           border-radius:5px;transition:width .18s}
+
+  .grid{display:grid;grid-template-columns:1.35fr 1fr;gap:16px}
+  @media(max-width:1080px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > h2{margin:0;padding:12px 16px;font-size:12px;text-transform:uppercase;
+             letter-spacing:.9px;color:var(--muted);border-bottom:1px solid var(--line);
+             display:flex;justify-content:space-between;align-items:center}
+  .card .body{padding:14px 16px}
+
+  .timeline{display:flex;align-items:center;gap:12px;padding:12px 16px;
+            border-bottom:1px solid var(--line)}
+  .timeline input[type=range]{flex:1;width:auto;accent-color:var(--accent)}
+  .clock{font-family:var(--mono);color:var(--muted);font-size:12px;min-width:160px}
+
+  .feed{height:430px;overflow-y:auto;font-family:var(--mono);font-size:12px}
+  .ev{padding:7px 16px;border-bottom:1px solid rgba(34,44,58,.5);display:flex;gap:10px;
+      align-items:baseline;cursor:pointer}
+  .ev:hover{background:var(--panel2)}
+  .ev.sel{background:#1b2534;box-shadow:inset 3px 0 0 var(--accent)}
+  .ev .time{color:var(--dim);min-width:104px}
+  .ev .tag{min-width:132px;font-weight:600}
+  .ev .rest{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .ok{color:var(--good)} .no{color:var(--bad)} .warnc{color:var(--warn)}
+  .deny{color:var(--accent2)} .dimc{color:var(--dim)}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid rgba(34,44,58,.6)}
+  th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+  td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  .receipt{font-family:var(--mono);font-size:12px}
+  .receipt .row{display:flex;justify-content:space-between;gap:12px;padding:4px 0;
+                border-bottom:1px solid rgba(34,44,58,.45)}
+  .receipt .row span:first-child{color:var(--muted)}
+  .receipt .msg{margin-top:10px;padding:10px;background:var(--panel2);border-radius:8px;
+                white-space:pre-wrap;color:var(--ink);border:1px solid var(--line)}
+  .receipt .rule{color:var(--accent2)}
+  .empty{color:var(--dim);padding:24px 4px;text-align:center}
+  .note{color:var(--dim);font-size:12px;padding:0 16px 14px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
+        border:1px solid var(--line);color:var(--muted)}
+  .pill.bad{color:var(--bad);border-color:#4a2523;background:#2a1614}
+  .pill.good{color:var(--good);border-color:#1e4635;background:#10241c}
+  #err{display:none;background:#2a1614;border:1px solid #4a2523;color:#ffb4ae;
+       padding:10px 14px;border-radius:9px;margin-bottom:14px;font-family:var(--mono);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>SecondAsk <span>revenue recovery, priced per attempt</span></h1>
+  <div class="controls">
+    <label>agent</label><select id="agent"></select>
+    <label>seed</label><input id="seed" type="number" value="7">
+    <label>items</label><input id="items" type="number" value="400">
+    <button class="primary" id="go">Run batch</button>
+  </div>
+</header>
+
+<main>
+  <div id="err"></div>
+
+  <div class="hero">
+    <div class="stat big"><div class="k">Recovered</div><div class="v" id="recovered">--</div>
+      <div class="s" id="recoveredSub">press Run batch</div>
+      <div class="bar"><i id="recoveredBar" style="width:0"></i></div></div>
+    <div class="stat"><div class="k">At risk</div><div class="v" id="atrisk">--</div>
+      <div class="s" id="atriskSub">&nbsp;</div></div>
+    <div class="stat"><div class="k">Messages sent</div><div class="v" id="msgs">--</div>
+      <div class="s" id="msgsSub">&nbsp;</div></div>
+    <div class="stat"><div class="k">Per message</div><div class="v" id="permsg">--</div>
+      <div class="s">recovered per message sent</div></div>
+    <div class="stat zero" id="violCard"><div class="k">Policy violations</div>
+      <div class="v" id="viol">--</div><div class="s" id="violSub">&nbsp;</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Decision stream <span class="pill" id="feedCount"></span></h2>
+      <div class="timeline">
+        <button id="play">Play</button>
+        <input type="range" id="scrub" min="0" max="0" value="0">
+        <div class="clock" id="clock">--</div>
+      </div>
+      <div class="feed" id="feed"><div class="empty">No run yet.</div></div>
+      <div class="note">Every line comes from the hash-chained ledger. The dashboard cannot
+        show a number the audit trail does not support. Click a line for its receipt.</div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h2>Decision receipt</h2>
+        <div class="body receipt" id="receipt"><div class="empty">Select a decision.</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <h2>By method</h2>
+        <div class="body"><table id="methods"><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h2>What the gate refused</h2>
+        <div class="body"><table id="denials"><tbody></tbody></table></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let RUN = null, TIMER = null, CURSOR = 0;
+
+function inr(paise, compact){
+  const neg = paise < 0; let n = Math.abs(paise) / 100;
+  if (compact){
+    let out;
+    if (n >= 1e7) out = (n/1e7).toFixed(2) + "Cr";
+    else if (n >= 1e5) out = (n/1e5).toFixed(2) + "L";
+    else if (n >= 1000) out = (n/1000).toFixed(1) + "K";
+    else out = group(Math.round(n));
+    return (neg?"-":"") + "₹" + out;
+  }
+  return (neg?"-":"") + "₹" + group(Math.round(n));
+}
+function group(n){
+  const s = String(n); if (s.length <= 3) return s;
+  let head = s.slice(0,-3), tail = s.slice(-3), parts = [];
+  while (head.length > 2){ parts.unshift(head.slice(-2)); head = head.slice(0,-2); }
+  if (head) parts.unshift(head);
+  return parts.join(",") + "," + tail;
+}
+function pct(a,b){ return b ? (100*a/b).toFixed(1) + "%" : "n/a"; }
+function esc(s){ return String(s==null?"":s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+function shortTime(iso){ return iso ? iso.slice(5,16).replace("T"," ") : "--"; }
+
+async function loadAgents(){
+  const res = await fetch("/api/agents");
+  const data = await res.json();
+  const sel = $("agent");
+  data.agents.forEach(a => {
+    const opt = document.createElement("option");
+    opt.value = a.key;
+    opt.textContent = a.label + (a.gated ? "" : "  [ungated]");
+    if (a.key === "secondask") opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+async function run(){
+  const btn = $("go");
+  btn.disabled = true; btn.textContent = "Running...";
+  $("err").style.display = "none";
+  stop();
+  try {
+    const q = new URLSearchParams({agent:$("agent").value, seed:$("seed").value, items:$("items").value});
+    const res = await fetch("/api/run?" + q);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    RUN = data;
+    render();
+  } catch (e){
+    $("err").style.display = "block";
+    $("err").textContent = "run failed: " + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "Run batch";
+  }
+}
+
+function render(){
+  const s = RUN.summary;
+  $("recovered").textContent = inr(s.recovered_paise, true);
+  $("recoveredSub").textContent =
+    pct(s.recovered_paise, s.at_risk_paise) + " of value, " +
+    pct(s.items_recovered, s.items_total) + " of items";
+  $("recoveredBar").style.width = Math.min(100, 100*s.recovered_paise/Math.max(1,s.at_risk_paise)) + "%";
+  $("atrisk").textContent = inr(s.at_risk_paise, true);
+  $("atriskSub").textContent = s.items_total + " failed payments";
+  $("msgs").textContent = s.messages_sent;
+  $("msgsSub").textContent = s.opt_outs + " opt-outs, " + s.complaints + " complaints";
+  $("permsg").textContent = s.messages_sent ? inr(s.recovered_paise/s.messages_sent, true) : "n/a";
+
+  const viol = s.total_violations;
+  $("viol").textContent = viol;
+  $("violCard").className = "stat " + (viol ? "viol" : "zero");
+  $("violSub").textContent = viol
+    ? (s.violating_actions + " actions broke a rule") : "gate held on every action";
+
+  const rows = Object.entries(RUN.by_method)
+    .sort((a,b) => b[1].at_risk - a[1].at_risk)
+    .map(([m,v]) => `<tr><td>${esc(m)}</td>
+      <td class="num">${inr(v.at_risk,true)}</td>
+      <td class="num">${inr(v.recovered,true)}</td>
+      <td class="num">${pct(v.recovered,v.at_risk)}</td>
+      <td class="num dimc">${v.n_rec}/${v.n}</td></tr>`).join("");
+  $("methods").innerHTML =
+    "<thead><tr><th>method</th><th class='num'>at risk</th><th class='num'>recovered</th>" +
+    "<th class='num'>of value</th><th class='num'>items</th></tr></thead><tbody>" + rows + "</tbody>";
+
+  const den = Object.entries(s.policy_denials).sort((a,b) => b[1]-a[1]);
+  $("denials").innerHTML = den.length
+    ? "<thead><tr><th>rule</th><th class='num'>refused</th></tr></thead><tbody>" +
+      den.map(([r,c]) => `<tr><td class="rule">${esc(r)}</td><td class="num">${c}</td></tr>`).join("") +
+      "</tbody>"
+    : "<tbody><tr><td class='dimc'>nothing was refused</td></tr></tbody>";
+
+  $("scrub").max = Math.max(0, RUN.events.length);
+  $("scrub").value = RUN.events.length;
+  CURSOR = RUN.events.length;
+  drawFeed();
+}
+
+function classFor(e){
+  if (e.kind === "policy_denied") return "deny";
+  if (e.kind === "closed") return "dimc";
+  if (e.kind === "wait") return "dimc";
+  return e.success ? "ok" : "warnc";
+}
+function labelFor(e){
+  if (e.kind === "policy_denied") return "REFUSED";
+  if (e.kind === "closed") return "closed";
+  if (e.kind === "wait") return "wait";
+  return (e.success ? "+ " : "  ") + (e.action || "");
+}
+
+function drawFeed(){
+  const feed = $("feed");
+  if (!RUN || !RUN.events.length){ feed.innerHTML = "<div class='empty'>No events.</div>"; return; }
+  const upto = RUN.events.slice(0, CURSOR);
+  const window_ = upto.slice(-260);
+  feed.innerHTML = window_.map((e,i) => {
+    const idx = upto.length - window_.length + i;
+    let rest = e.why || "";
+    if (e.kind === "policy_denied" && e.rules) rest = e.rules.join(", ") + " :: " + rest;
+    if (e.kind === "action" && e.recovered) rest = inr(e.recovered,true) + " recovered :: " + rest;
+    return `<div class="ev" data-i="${idx}">
+      <span class="time">${shortTime(e.t)}</span>
+      <span class="tag ${classFor(e)}">${esc(labelFor(e))}</span>
+      <span class="rest">${esc(rest)}</span></div>`;
+  }).join("");
+  feed.scrollTop = feed.scrollHeight;
+  $("feedCount").textContent = upto.length + " / " + RUN.events.length + " events";
+  const last = upto[upto.length-1];
+  $("clock").textContent = last ? shortTime(last.t) + " IST-ish (UTC)" : "--";
+  if (last) {
+    $("recovered").textContent = inr(last.cumulative || 0, true);
+    $("recoveredBar").style.width =
+      Math.min(100, 100*(last.cumulative||0)/Math.max(1,RUN.at_risk_paise)) + "%";
+  }
+  feed.querySelectorAll(".ev").forEach(node => {
+    node.onclick = () => showReceipt(Number(node.dataset.i), node);
+  });
+}
+
+function showReceipt(index, node){
+  document.querySelectorAll(".ev.sel").forEach(n => n.classList.remove("sel"));
+  if (node) node.classList.add("sel");
+  const e = RUN.events[index];
+  if (!e){ return; }
+  const rows = [];
+  const add = (k,v) => rows.push(`<div class="row"><span>${esc(k)}</span><span>${v}</span></div>`);
+  add("item", esc(e.item));
+  add("at", esc(e.t));
+  add("kind", esc(e.kind));
+  if (e.action) add("action", esc(e.action));
+  if (e.channel) add("channel", esc(e.channel));
+  if (e.amount) add("amount", inr(e.amount));
+  if (e.kind === "action"){
+    add("p(recover)", (e.p||0).toFixed(4));
+    add("expected value", inr(e.ev||0));
+    add("outcome", e.success
+      ? `<span class="ok">recovered ${inr(e.recovered)}</span>`
+      : `<span class="warnc">no recovery</span>`);
+  }
+  if (e.rules && e.rules.length)
+    add("rules broken", `<span class="rule">${esc(e.rules.join(", "))}</span>`);
+  if (e.state) add("final state", esc(e.state));
+  if (e.until) add("waiting until", esc(e.until));
+  let html = rows.join("");
+  if (e.why) html += `<div class="msg">${esc(e.why)}</div>`;
+  if (e.message) html += `<div class="msg">${esc(e.message)}</div>`;
+  if (e.reply){
+    html += `<div class="msg"><b>customer replied:</b> ${esc(e.reply)}` +
+            (e.reply_parsed ? `\n<b>parsed as:</b> ${esc(e.reply_parsed)}` : "") + `</div>`;
+  }
+  $("receipt").innerHTML = html;
+}
+
+function play(){
+  if (TIMER){ stop(); return; }
+  if (CURSOR >= RUN.events.length) CURSOR = 0;
+  $("play").textContent = "Pause";
+  const step = Math.max(1, Math.round(RUN.events.length / 260));
+  TIMER = setInterval(() => {
+    CURSOR = Math.min(RUN.events.length, CURSOR + step);
+    $("scrub").value = CURSOR;
+    drawFeed();
+    if (CURSOR >= RUN.events.length) stop();
+  }, 40);
+}
+function stop(){
+  if (TIMER) clearInterval(TIMER);
+  TIMER = null;
+  $("play").textContent = "Play";
+}
+
+$("go").onclick = run;
+$("play").onclick = () => { if (RUN) play(); };
+$("scrub").oninput = ev => { stop(); CURSOR = Number(ev.target.value); drawFeed(); };
+loadAgents();
+</script>
+</body>
+</html>
