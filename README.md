@@ -9,30 +9,54 @@ Built for the Razorpay AI Buildathon, Track 03 (AI Revenue Recovery).
 
 ## Results
 
-3,000 failed payments across 3 seeds, 21-day horizon, `₹1.78 crore` at risk.
+12,000 failed payments across 12 seeds, 21-day horizon, `₹7.30 crore` at risk.
 Every agent sees the same batches and, through common random numbers, the same
 outcome draws for identical actions.
 
 | agent | recovered | of value | of items | messages | per message | violations |
 |---|---:|---:|---:|---:|---:|---:|
 | do nothing | ₹0 | 0.0% | 0.0% | 0 | n/a | 0 |
-| fixed schedule `+1h/+24h/+72h` | ₹18.79L | 10.6% | 11.1% | 4,085 | ₹460 | 0 |
-| aggressive, gated | ₹21.84L | 12.3% | 15.2% | 6,195 | ₹352 | 0 |
-| LLM loop, gated | ₹33.28L | 18.7% | 20.2% | 6,067 | ₹548 | 0 |
-| **SecondAsk** | **₹36.41L** | **20.5%** | **21.4%** | **5,468** | **₹666** | **0** |
-
-Against the industry-default retry schedule: **1.94x the money, 1.93x the items
-recovered, 1.45x per message sent.** Against the same LLM loop with the policy
-gate closed: 1.09x the money using 0.90x the messages.
+| fixed schedule `+1h/+24h/+72h` | ₹62.90L | 8.6% | 11.7% | 16,543 | ₹380 | 0 |
+| aggressive, gated | ₹73.61L | 10.1% | 15.2% | 24,906 | ₹296 | 0 |
+| LLM loop, gated | ₹1.18Cr | 16.2% | 20.4% | 24,373 | ₹484 | 0 |
+| **SecondAsk** | **₹1.32Cr** | **18.2%** | **21.4%** | **21,872** | **₹606** | **0** |
 
 Zero policy violations across every run, because they are impossible by
 construction rather than discouraged by a prompt. 22 rules, checked exhaustively,
 failing closed.
 
-Two figures deliberately absent from that table, both reported in full by
+### What survives a confidence interval
+
+An earlier version of this README quoted ratios to two decimals from three
+seeds. Three draws is enough to see a large effect and nowhere near enough to
+say how large. Twelve seeds, paired bootstrap over per-seed differences (both
+agents saw the same worlds, so the comparison is paired), 95% intervals:
+
+| comparison | ratio | per-seed delta | wins | sign test |
+|---|---:|---:|---:|---:|
+| vs fixed schedule | **2.11x** `[1.76, 2.50]` | +₹5.80L `[+4.37L, +7.07L]` | 11/12 | p=0.006 |
+| vs aggressive | **1.80x** `[1.56, 2.09]` | +₹4.90L `[+3.70L, +6.12L]` | 12/12 | p=0.0005 |
+| vs gated LLM loop, money | 1.12x `[0.99, 1.27]` | +₹1.21L `[-8.7K, +2.49L]` | 9/12 | p=0.146 |
+| vs gated LLM loop, messages | **0.90x** `[0.89, 0.91]` | | 12/12 | |
+
+Two of those are solid and one is not, and the one that is not was previously
+stated as a result:
+
+**Against the fixed retry schedule the effect is real.** 2.11x the money, the
+interval nowhere near 1.0, 11 of 12 seeds.
+
+**Against a gated LLM loop, SecondAsk is not distinguishable on money.** The
+interval `[0.99, 1.27]` includes 1.0 and the sign test does not come close. The
+previous README claimed "1.09x the money" off three seeds; twelve seeds say that
+number was noise. What *is* real is the message count: **10% fewer, interval
+`[0.89, 0.91]`, every single seed**. So the honest claim is that the expected
+value planner buys efficiency here, not raw recovery, and the raw recovery
+advantage over a well-behaved LLM loop is unproven.
+
+Two figures deliberately absent from the table above, both reported in full by
 `python -m secondask eval`:
 
-- An **ungated** LLM loop recovers ₹70.94L, which is 39.9%. It also breaks 23,906
+- An **ungated** LLM loop recovers ₹2.68Cr, which is 36.7%. It also breaks 98,050
   rules. That is not a result, it is a description of what a system does when
   nobody stops it.
 - The **single-attempt ceiling** on these batches is about 36% of value, so
@@ -40,10 +64,12 @@ Two figures deliberately absent from that table, both reported in full by
   real headroom left and I would rather say so.
 
 ```
-python -m secondask eval --seeds 7,11,13 -n 1000
+python -m secondask eval --seeds 7,11,13,17,19,23,29,31,37,41,43,47 -n 1000 -j 10
 ```
 
----
+Twelve seeds is 488 seconds on 10 worker processes. The evaluation is pure Python
+and CPU bound, so it parallelises across `(agent, seed)` cells with no shared
+state.
 
 ## The idea
 
@@ -98,46 +124,42 @@ for a human. **It proposes. It never executes.**
 
 ## The ablation that came out backwards
 
-Removing language understanding **improves** recovery, from ₹36.41L to ₹37.77L.
+Removing language understanding **improves** recovery, by ₹6.70L across 12 seeds
+(₹1.32Cr to ₹1.39Cr).
 
-I expected the opposite and it is worth being precise about why. Understanding
-replies makes the agent:
+I expected the opposite. Understanding replies makes the agent honour 942
+promises to pay, route 124 disputes to a human instead of continuing to message
+them, and act on an opt-out the moment somebody types STOP rather than waiting
+until they block the sender. All three reduce recovery inside a 21-day window.
 
-- honour 231 promises to pay, 31 of them partial, so it stops chasing until the
-  promised date,
-- route 38 disputes to a human instead of continuing to message them,
-- act on an opt-out the moment somebody types STOP rather than waiting until they
-  block the sender.
+The size of that effect is at the edge of what 12 seeds can resolve: 9 of 12
+seeds, sign test p=0.146, ratio 1.05 `[1.01, 1.10]`. So the direction is
+consistent and the magnitude is small.
 
-All three reduce recovery inside a 21-day measurement window. The version that
-cannot read replies keeps chasing people who already told it to stop, and
-collects about 4% more money doing it. Its opt-out count is **37% higher (71
-against 52)**, and 38 disputing customers get an automated collection sequence
-instead of a person.
+The clearer signal is the one that is not about money. Without reply parsing,
+**opt-outs rise from 195 to 252** and 124 disputing customers get an automated
+collection sequence instead of a person. The parser costs roughly 5% of recovered
+value inside the measurement window and buys a materially better customer
+experience and a defensible position with a regulator.
 
-So the reply parser costs roughly 4% of recovered value and buys a materially
-better customer experience and a defensible position with a regulator. I kept it
-and would argue for keeping it, but the number goes in the table as it came out.
-
-Worth noting the gap narrowed after the multi-intent upgrade (it was ₹1.99L on
-the previous single-intent parser, now ₹1.36L) while opt-outs fell from 117 to
-52. Better parsing does not close the gap, because the gap is not a parsing
-problem. It is the cost of behaving well, and it is real.
+I kept it and would argue for keeping it. But the number goes in the table as it
+came out.
 
 ## What each component is worth
 
-| ablation | recovered | delta | messages | violations | promises | disputes |
-|---|---:|---:|---:|---:|---:|---:|
-| SecondAsk | ₹36.41L | baseline | 5,468 | 0 | 231 | 38 |
-| remove the Constitution | ₹55.65L | +₹19.24L | 5,760 | **8,558** | 201 | 20 |
-| remove expected value pricing | ₹17.88L | **-₹18.53L** | 2,448 | 0 | 120 | 19 |
-| remove language understanding | ₹37.77L | +₹1.36L | 5,762 | 0 | **0** | **0** |
+| ablation | recovered | delta | messages | violations | promises | disputes | opt-outs |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SecondAsk | ₹1.32Cr | baseline | 21,872 | 0 | 942 | 124 | 195 |
+| remove the Constitution | ₹2.03Cr | +₹70.45L | 23,248 | **34,151** | 820 | 56 | 424 |
+| remove expected value pricing | ₹53.05L | **-₹79.40L** | 9,892 | 0 | 520 | 61 | 43 |
+| remove language understanding | ₹1.39Cr | +₹6.70L | 22,919 | 0 | **0** | **0** | 252 |
 
-The underwriter is by a distance the largest contributor: removing it costs 51%
-of recovered value. Removing the gate *gains* 53% and 8,558 violations, which is
-the honest price of compliance and the reason the gate is not optional.
+The underwriter is by a wide margin the largest contributor, and it is the one
+result that is unambiguous: removing it costs 60% of recovered value, 12 of 12
+seeds, ratio 2.50x `[2.05, 3.18]`, p=0.0005.
 
----
+Removing the gate *gains* 53% and 34,151 violations. That is the honest price of
+compliance and the reason the gate is not optional.
 
 ## Production surface
 
@@ -218,20 +240,27 @@ Python 3.10 or later. **No third-party dependencies.**
 python -m secondask world --bound          # describe a batch and its ceiling
 python -m secondask train                  # fit the underwriter (about 3 s)
 python -m secondask calibrate              # held-out calibration
-python -m secondask eval                   # the comparison table
+python -m secondask eval -j 10             # the comparison table, parallel
 python -m secondask run --agent secondask  # one agent, per-method breakdown
 python -m secondask injection              # the adversarial suite
 python -m secondask sweep                  # sensitivity to the goodwill price
 python -m secondask serve                  # the dashboard on :8420
 python -m secondask serve-api              # the ingestion API on :8500
-python -m unittest discover -s tests       # 236 tests
+python -m unittest discover -s tests       # 270 tests
 ```
 
 Optional, and never required:
 
-- `ANTHROPIC_API_KEY` switches the model boundary from the deterministic parser
-  to Claude. Every headline number above is from the deterministic path, so
-  anybody can reproduce them.
+- A model key switches the boundary from the deterministic parser to a real
+  model. Either provider works: `ANTHROPIC_API_KEY` for Claude, or
+  `GEMINI_API_KEY` / `GOOGLE_API_KEY` for Gemini, selected with
+  `--provider auto|claude|gemini|none`. Every headline number above is from the
+  deterministic path, so anybody can reproduce them without credentials.
+
+  Adding the second provider was the test of the central design claim. If the
+  model really is three narrow jobs behind a validating gateway, swapping vendors
+  should be one new file and no changes anywhere else. It was: `providers.build()`
+  is now the only place in the codebase that knows a vendor name.
 - `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` (test keys only, `rzp_test_` is
   enforced) switch `--razorpay live_test` to real payment link creation. The
   default mock reproduces the API shape and deterministically injects 5xx and
@@ -313,7 +342,12 @@ Fuller version in [METHODOLOGY.md](METHODOLOGY.md).
 6. **Concurrency is verified, not benchmarked.** The async path produces
    identical results at concurrency 1 and 24, but the mock gateway has no real
    latency, so the wall-clock gain is untested here.
-7. **The holiday calendar expires.** Lunar festival dates are tabulated for 2025
+7. **The real-model path is still unmeasured.** Every number here comes from the
+   deterministic parser. Both provider backends exist and are unit tested, but no
+   benchmark has been run against a live model, so the reply parser's accuracy on
+   real Hinglish is asserted from a stub rather than measured. This is the largest
+   remaining gap.
+8. **The holiday calendar expires.** Lunar festival dates are tabulated for 2025
    to 2027 and need refreshing annually. `/health` reports coverage rather than
    letting a stale table silently stop matching.
 
@@ -337,7 +371,7 @@ secondask/
   agents/         SecondAsk, baselines, oracle
   eval/           harness, reporting, analytic bounds
   server/         dashboard, ingestion API
-tests/            236 tests
+tests/            270 tests
 ```
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): how it fits together and why the model is
