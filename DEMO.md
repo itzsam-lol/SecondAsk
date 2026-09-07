@@ -8,7 +8,7 @@ payments fail. Open on the number.
 
 ---
 
-## 0:00 to 0:25 — the number, and the claim
+## 0:00 to 0:25 / the number, and the claim
 
 Screen: the dashboard, already run.
 
@@ -26,7 +26,7 @@ Point at **policy violations: 0**.
 
 ---
 
-## 0:25 to 1:10 — the one idea
+## 0:25 to 1:10 / the one idea
 
 Screen: two error signatures side by side.
 
@@ -47,7 +47,7 @@ Screen: two error signatures side by side.
 
 ---
 
-## 1:10 to 2:10 — the three layers
+## 1:10 to 2:10 / the three layers
 
 Screen: the architecture diagram.
 
@@ -74,7 +74,7 @@ Screen: the architecture diagram.
 
 ---
 
-## 2:10 to 3:00 — a receipt
+## 2:10 to 3:00 / a receipt
 
 Screen: click one decision in the stream.
 
@@ -92,7 +92,7 @@ Screen: click one decision in the stream.
 
 ---
 
-## 3:00 to 4:00 — break it on camera
+## 3:00 to 4:00 / break it on camera
 
 This is the section that matters most. Do all four, fast.
 
@@ -129,7 +129,7 @@ This is the section that matters most. Do all four, fast.
 
 ---
 
-## 4:00 to 4:40 — the ablations
+## 4:00 to 4:40 / the ablations
 
 Screen: the ablation table.
 
@@ -156,7 +156,7 @@ Screen: the ablation table.
 
 ---
 
-## 4:40 to 5:00 — what broke
+## 4:40 to 5:00 / what broke
 
 The form asks "what broke, and how you got out". Answer it in the video too, it
 is the question they say they read first.

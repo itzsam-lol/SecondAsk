@@ -303,11 +303,11 @@ td.rule{font-family:var(--mono); color:var(--violet); font-size:var(--t-eyebrow)
     <div class="trackNote" id="trackNote">&nbsp;</div>
 
     <div class="stats">
-      <div class="stat"><div class="k">At risk</div><div class="v" id="atrisk">&mdash;</div><div class="s" id="atriskSub">&nbsp;</div></div>
-      <div class="stat"><div class="k">Messages sent</div><div class="v" id="msgs">&mdash;</div><div class="s" id="msgsSub">&nbsp;</div></div>
-      <div class="stat"><div class="k">Per message</div><div class="v" id="permsg">&mdash;</div><div class="s">recovered per message</div></div>
-      <div class="stat" id="violStat"><div class="k">Policy violations</div><div class="v" id="viol">&mdash;</div><div class="s" id="violSub">&nbsp;</div></div>
-      <div class="stat"><div class="k">Refused by the gate</div><div class="v" id="refused">&mdash;</div><div class="s">actions the rules stopped</div></div>
+      <div class="stat"><div class="k">At risk</div><div class="v" id="atrisk">--</div><div class="s" id="atriskSub">&nbsp;</div></div>
+      <div class="stat"><div class="k">Messages sent</div><div class="v" id="msgs">--</div><div class="s" id="msgsSub">&nbsp;</div></div>
+      <div class="stat"><div class="k">Per message</div><div class="v" id="permsg">--</div><div class="s">recovered per message</div></div>
+      <div class="stat" id="violStat"><div class="k">Policy violations</div><div class="v" id="viol">--</div><div class="s" id="violSub">&nbsp;</div></div>
+      <div class="stat"><div class="k">Refused by the gate</div><div class="v" id="refused">--</div><div class="s">actions the rules stopped</div></div>
     </div>
   </section>
 
@@ -320,7 +320,7 @@ td.rule{font-family:var(--mono); color:var(--violet); font-size:var(--t-eyebrow)
       <div class="transport">
         <button id="play">Play</button>
         <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Timeline">
-        <span class="clock" id="clock">&mdash;</span>
+        <span class="clock" id="clock">--</span>
       </div>
       <div class="tape" id="tape"><div class="empty">No run yet.</div></div>
       <div class="note">Every line is read back from the hash-chained ledger, so this view
@@ -337,12 +337,12 @@ td.rule{font-family:var(--mono); color:var(--violet); font-size:var(--t-eyebrow)
 
       <div class="card">
         <header><h2>Recovery by method</h2></header>
-        <div class="body"><table id="methods"><tbody><tr><td class="empty">&mdash;</td></tr></tbody></table></div>
+        <div class="body"><table id="methods"><tbody><tr><td class="empty">--</td></tr></tbody></table></div>
       </div>
 
       <div class="card">
         <header><h2>What the gate refused</h2></header>
-        <div class="body"><table id="denials"><tbody><tr><td class="empty">&mdash;</td></tr></tbody></table></div>
+        <div class="body"><table id="denials"><tbody><tr><td class="empty">--</td></tr></tbody></table></div>
       </div>
     </div>
   </div>
@@ -381,7 +381,7 @@ function group(n){
 }
 const pct = (a,b) => b ? (100*a/b).toFixed(1) + "%" : "n/a";
 const esc = s => String(s == null ? "" : s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
-const clock = iso => iso ? iso.slice(5,16).replace("T"," ") : "—";
+const clock = iso => iso ? iso.slice(5,16).replace("T"," ") : "-";
 
 /* Count-up on the hero. Eased, and it respects reduced-motion. */
 function countTo(target, max){
@@ -532,7 +532,7 @@ function drawTape(){
   tape.scrollTop = tape.scrollHeight;
   $("feedCount").textContent = upto.length.toLocaleString() + " / " + RUN.events.length.toLocaleString() + " events";
   const last = upto[upto.length-1];
-  $("clock").textContent = last ? clock(last.t) + " UTC" : "—";
+  $("clock").textContent = last ? clock(last.t) + " UTC" : "--";
   if (last){
     const value = last.cumulative || 0;
     $("recovered").textContent = inr(value, true);

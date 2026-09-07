@@ -15,7 +15,7 @@ outcome draws for identical actions.
 
 | agent | recovered | of value | of items | messages | per message | violations |
 |---|---:|---:|---:|---:|---:|---:|
-| do nothing | ₹0 | 0.0% | 0.0% | 0 | — | 0 |
+| do nothing | ₹0 | 0.0% | 0.0% | 0 | n/a | 0 |
 | fixed schedule `+1h/+24h/+72h` | ₹21.16L | 11.9% | 12.2% | 4,477 | ₹473 | 0 |
 | aggressive, gated | ₹20.17L | 11.4% | 15.8% | 6,332 | ₹318 | 0 |
 | LLM loop, gated | ₹28.87L | 16.3% | 20.7% | 6,173 | ₹468 | 0 |
@@ -117,7 +117,7 @@ came out rather than being quietly dropped.
 
 | ablation | recovered | delta | messages | violations | promises | disputes |
 |---|---:|---:|---:|---:|---:|---:|
-| SecondAsk | ₹31.78L | — | 5,275 | 0 | 216 | 24 |
+| SecondAsk | ₹31.78L | baseline | 5,275 | 0 | 216 | 24 |
 | remove the Constitution | ₹53.03L | +₹21.25L | 5,307 | **12,864** | 204 | 16 |
 | remove expected value pricing | ₹20.00L | **-₹11.79L** | 2,722 | 0 | 146 | 21 |
 | remove language understanding | ₹33.77L | +₹1.99L | 5,580 | 0 | **0** | **0** |
@@ -279,10 +279,10 @@ secondask/
 tests/            147 tests
 ```
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — how it fits together and why the model is
+- [ARCHITECTURE.md](ARCHITECTURE.md): how it fits together and why the model is
   the smallest part
-- [METHODOLOGY.md](METHODOLOGY.md) — how "money recovered" is made measurable
+- [METHODOLOGY.md](METHODOLOGY.md): how "money recovered" is made measurable
   without a production holdout
-- [COMPLIANCE.md](COMPLIANCE.md) — every rule mapped to the obligation it
+- [COMPLIANCE.md](COMPLIANCE.md): every rule mapped to the obligation it
   implements, and what is deliberately not implemented
-- [DEMO.md](DEMO.md) — the five-minute video running order
+- [DEMO.md](DEMO.md): the five-minute video running order
