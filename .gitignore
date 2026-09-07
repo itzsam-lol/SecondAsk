@@ -18,3 +18,13 @@ runs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# credentials, never commit
+.env
+.env.local
+api.txt
+*.key
+*_key.txt
+secrets*.txt
+credentials*.json
+service-account*.json
