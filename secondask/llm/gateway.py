@@ -108,6 +108,7 @@ class GatewayStats:
     pii_redactions: int = 0
     injections_flagged: int = 0
     backend_disabled_after: int = 0
+    rate_limited: int = 0
     total_latency_ms: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
@@ -120,8 +121,20 @@ class GatewayStats:
             "pii_redactions": self.pii_redactions,
             "injections_flagged": self.injections_flagged,
             "backend_disabled_after": self.backend_disabled_after,
+            "rate_limited": self.rate_limited,
             "avg_latency_ms": round(self.total_latency_ms / self.calls, 2) if self.calls else 0.0,
         }
+
+
+class RateLimited(RuntimeError):
+    """The provider asked us to slow down.
+
+    Distinguished from every other failure because the correct response is the
+    opposite one. A 403 means the credential is wrong and the backend should be
+    abandoned for the run; a 429 means it is working and we are asking too fast.
+    An earlier version of the breaker counted both the same way, so a burst of
+    rate limits could permanently disable a perfectly good model.
+    """
 
 
 class Backend(Protocol):
@@ -401,7 +414,17 @@ class LLMGateway:
         """
         return self.backend is not None and not self.backend_disabled
 
-    def _record_backend_failure(self) -> None:
+    def _record_backend_failure(self, exc: Optional[BaseException] = None) -> None:
+        """Count a failure toward the latch, unless it is a rate limit.
+
+        Rate limits are counted separately and never disable the backend. The
+        provider is telling us it works and we are going too fast; giving up on
+        it is precisely the wrong reaction, and it would silently turn a
+        real-model run into a deterministic one.
+        """
+        if isinstance(exc, RateLimited) or _looks_rate_limited(exc):
+            self.stats.rate_limited += 1
+            return
         self._consecutive_failures += 1
         if self._consecutive_failures >= self.failure_threshold and not self.backend_disabled:
             self.backend_disabled = True
@@ -479,9 +502,9 @@ class LLMGateway:
             try:
                 raw = self.backend.complete_json(PARSE_SYSTEM, prompt, max_tokens=220)
                 parsed, violations = self._coerce_reply(raw, now)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 self.stats.errors += 1
-                self._record_backend_failure()
+                self._record_backend_failure(exc)
                 parsed, violations = None, ["backend error"]
                 if self.backend_disabled:
                     break
@@ -644,9 +667,9 @@ class LLMGateway:
         try:
             raw = self.backend.complete_json(FILL_SYSTEM, user, max_tokens=200)
             payload = _extract_json(raw)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             self.stats.errors += 1
-            self._record_backend_failure()
+            self._record_backend_failure(exc)
             payload = None
 
         self.stats.total_latency_ms += (time.perf_counter() - started) * 1000
@@ -673,13 +696,29 @@ class LLMGateway:
         started = time.perf_counter()
         try:
             text = self.backend.complete_json(NARRATE_SYSTEM, json.dumps(facts, default=str), max_tokens=180)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             self.stats.errors += 1
-            self._record_backend_failure()
+            self._record_backend_failure(exc)
             text = ""
         self.stats.total_latency_ms += (time.perf_counter() - started) * 1000
         cleaned = (text or "").strip().strip("`")
         return cleaned[:400] if cleaned else fallback
+
+
+def _looks_rate_limited(exc: Optional[BaseException]) -> bool:
+    """Recognise a rate limit from a message when the type was flattened.
+
+    Backends wrap transport errors in RuntimeError, so the type is often lost by
+    the time it reaches here. Matching on the wire vocabulary is unlovely and is
+    the difference between throttling and abandoning a working model.
+    """
+    if exc is None:
+        return False
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in ("429", "resource_exhausted", "rate limit", "quota", "too many requests")
+    )
 
 
 def _fallback_narration(facts: dict[str, Any]) -> str:

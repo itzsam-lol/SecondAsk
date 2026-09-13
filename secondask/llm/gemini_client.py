@@ -94,6 +94,12 @@ class GeminiBackend:
         }
         if self.json_mode:
             payload["generationConfig"]["responseMimeType"] = "application/json"
+        # Thinking off. Measured on a live call: the flash model spent 51
+        # thinking tokens to emit 9 output tokens classifying a five-word
+        # Hinglish message. This is a closed-set classification against a fixed
+        # schema, so there is nothing to reason about, and at thousands of calls
+        # per batch that overhead is most of the bill and most of the latency.
+        payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
 
         body = json.dumps(payload).encode("utf-8")
         self.calls += 1

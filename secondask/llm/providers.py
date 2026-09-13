@@ -22,11 +22,13 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-PROVIDERS = ("claude", "gemini")
+PROVIDERS = ("claude", "gemini", "vertex")
 
 
 def available() -> dict[str, bool]:
     """Which providers have credentials, without reading their values."""
+    from .vertex_client import available as vertex_available
+
     return {
         "claude": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "gemini": bool(
@@ -34,6 +36,7 @@ def available() -> dict[str, bool]:
             or os.environ.get("GOOGLE_API_KEY")
             or os.environ.get("GOOGLE_GENAI_API_KEY")
         ),
+        "vertex": vertex_available(),
     }
 
 
@@ -54,8 +57,14 @@ def build(provider: str = "auto") -> Optional[Any]:
         from .gemini_client import build_backend
 
         return build_backend()
+    if provider == "vertex":
+        from .vertex_client import build_backend
+
+        return build_backend()
     if provider != "auto":
-        raise ValueError(f"unknown provider {provider!r}, expected one of: auto, claude, gemini, none")
+        raise ValueError(
+            f"unknown provider {provider!r}, expected one of: auto, claude, gemini, vertex, none"
+        )
 
     have = available()
     if have["claude"]:
@@ -67,7 +76,13 @@ def build(provider: str = "auto") -> Optional[Any]:
     if have["gemini"]:
         from .gemini_client import build_backend as gemini
 
-        return gemini()
+        backend = gemini()
+        if backend is not None:
+            return backend
+    if have["vertex"]:
+        from .vertex_client import build_backend as vertex
+
+        return vertex()
     return None
 
 

@@ -397,7 +397,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--razorpay", choices=["mock", "live_test"], default="mock")
     p.add_argument("--gateway-failure-rate", type=float, default=0.06)
     p.add_argument("--real-llm", action="store_true")
-    p.add_argument("--provider", choices=["auto", "claude", "gemini", "none"], default="auto")
+    p.add_argument("--provider", choices=["auto", "claude", "gemini", "vertex", "none"], default="auto")
     p.add_argument("-j", "--jobs", type=int, default=1,
                    help="parallel worker processes; ignored for --real-llm runs")
     p.add_argument("--json", default="")
@@ -409,13 +409,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agent", default="secondask")
     p.add_argument("--razorpay", choices=["mock", "live_test"], default="mock")
     p.add_argument("--real-llm", action="store_true")
-    p.add_argument("--provider", choices=["auto", "claude", "gemini", "none"], default="auto")
+    p.add_argument("--provider", choices=["auto", "claude", "gemini", "vertex", "none"], default="auto")
     p.add_argument("--ledger", default="")
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("injection", help="prompt injection suite")
     p.add_argument("--real-llm", action="store_true")
-    p.add_argument("--provider", choices=["auto", "claude", "gemini", "none"], default="auto")
+    p.add_argument("--provider", choices=["auto", "claude", "gemini", "vertex", "none"], default="auto")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(func=cmd_injection)
 
