@@ -47,6 +47,31 @@ def env(**values):
                 os.environ[key] = value
 
 
+@contextmanager
+def no_vertex():
+    """Pretend Vertex is not configured.
+
+    Clearing environment variables is not enough to simulate "no credentials":
+    Vertex reads Application Default Credentials from disk, so on any machine
+    where somebody has run ``gcloud auth application-default login`` it stays
+    available regardless of the environment. Patching the availability probe is
+    the only way to test the genuinely-unconfigured path on a configured
+    machine, and forgetting that is what made this suite fail the first time it
+    ran on one.
+    """
+    from unittest import mock
+
+    with mock.patch("secondask.llm.vertex_client.available", return_value=False):
+        yield
+
+
+@contextmanager
+def no_credentials():
+    """No provider of any kind: environment cleared and Vertex neutralised."""
+    with env(**ALL_KEYS), no_vertex():
+        yield
+
+
 ALL_KEYS = {
     "ANTHROPIC_API_KEY": None,
     "GEMINI_API_KEY": None,
@@ -58,7 +83,7 @@ ALL_KEYS = {
 class ProviderSelectionTest(unittest.TestCase):
     def test_no_credentials_returns_none(self):
         """Running without a key is the normal case and must never raise."""
-        with env(**ALL_KEYS):
+        with no_credentials():
             self.assertIsNone(providers.build("auto"))
             self.assertFalse(any(providers.available().values()))
 
@@ -66,8 +91,26 @@ class ProviderSelectionTest(unittest.TestCase):
         with env(**{**ALL_KEYS, "GEMINI_API_KEY": "x"}):
             self.assertIsNone(providers.build("none"))
 
+    def test_vertex_is_reported_when_adc_exists(self):
+        """Vertex availability is a disk check, not an environment check."""
+        from unittest import mock
+
+        with env(**ALL_KEYS):
+            with mock.patch("secondask.llm.vertex_client.available", return_value=True):
+                self.assertTrue(providers.available()["vertex"])
+            with no_vertex():
+                self.assertFalse(providers.available()["vertex"])
+
+    def test_vertex_is_last_in_auto_order(self):
+        """An explicit API key wins over ambient cloud credentials."""
+        from unittest import mock
+
+        with env(**{**ALL_KEYS, "GEMINI_API_KEY": "g"}):
+            with mock.patch("secondask.llm.vertex_client.available", return_value=True):
+                self.assertTrue(providers.build("auto").name.startswith("gemini"))
+
     def test_gemini_is_selected_when_only_it_has_a_key(self):
-        with env(**{**ALL_KEYS, "GEMINI_API_KEY": "test-key"}):
+        with env(**{**ALL_KEYS, "GEMINI_API_KEY": "test-key"}), no_vertex():
             backend = providers.build("auto")
             self.assertIsNotNone(backend)
             self.assertTrue(backend.name.startswith("gemini"))
@@ -91,6 +134,7 @@ class ProviderSelectionTest(unittest.TestCase):
     def test_unknown_provider_raises(self):
         with self.assertRaises(ValueError):
             providers.build("openai")
+        self.assertIn("vertex", str(providers.PROVIDERS))
 
     def test_describe_never_leaks_a_key(self):
         with env(**{**ALL_KEYS, "GEMINI_API_KEY": "super-secret-value"}):
