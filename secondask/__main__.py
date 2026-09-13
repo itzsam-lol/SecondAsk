@@ -7,6 +7,7 @@
     python -m secondask run          one agent, with a decision receipt
     python -m secondask ablate       what each component contributes
     python -m secondask injection    the prompt injection suite
+    python -m secondask parser       reply parser accuracy vs ground truth
     python -m secondask verify       check a ledger's hash chain
     python -m secondask sweep        sensitivity to the goodwill price
     python -m secondask serve        the dashboard
@@ -301,6 +302,50 @@ def cmd_injection(args: argparse.Namespace) -> int:
     return 0 if escaped == 0 else 1
 
 
+def cmd_parser(args: argparse.Namespace) -> int:
+    """Measure reply-parser accuracy against the labelled corpus."""
+    import json as _json
+    from datetime import datetime, timezone
+
+    from .eval.parser_bench import corpus, render, score
+    from .llm import providers
+    from .llm.gateway import LLMGateway
+
+    now = datetime(2026, 3, 10, 12, tzinfo=timezone.utc)
+    samples = corpus(repeats=args.repeats)
+    print(f"{len(samples)} labelled replies from the world's own corpus")
+    print(f"  {providers.describe()}")
+    print()
+
+    reports = []
+    # The deterministic parser always runs, so there is always a baseline to
+    # compare against rather than an absolute number with no reference.
+    reports.append(score(LLMGateway(backend=None), now, samples))
+    print(f"  deterministic: done ({reports[-1].seconds:.0f}s)", flush=True)
+
+    if args.real_llm:
+        backend = providers.build(args.provider)
+        if backend is None:
+            print(f"no model backend available: {providers.describe()}", file=sys.stderr)
+            return 2
+        gateway = LLMGateway(backend=backend, max_repairs=args.max_repairs)
+        reports.append(score(gateway, now, samples,
+                             progress=_progress if args.verbose else None))
+        print(f"  {backend.name}: done ({reports[-1].seconds:.0f}s)", flush=True)
+        if hasattr(backend, "usage"):
+            print(f"  usage: {_json.dumps(backend.usage())}")
+
+    print()
+    print(render(reports))
+
+    if args.json:
+        os.makedirs(os.path.dirname(os.path.abspath(args.json)) or ".", exist_ok=True)
+        with open(args.json, "w", encoding="utf-8", newline="\n") as handle:
+            _json.dump([r.to_dict() for r in reports], handle, indent=1)
+        print(f"\nwrote {args.json}")
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from .ledger import Ledger
 
@@ -418,6 +463,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--provider", choices=["auto", "claude", "gemini", "vertex", "none"], default="auto")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(func=cmd_injection)
+
+    p = sub.add_parser("parser", help="reply parser accuracy against labelled ground truth")
+    p.add_argument("--real-llm", action="store_true")
+    p.add_argument("--provider", choices=["auto", "claude", "gemini", "vertex", "none"], default="auto")
+    p.add_argument("--repeats", type=int, default=1)
+    p.add_argument("--max-repairs", type=int, default=1)
+    p.add_argument("--json", default="")
+    p.add_argument("-v", "--verbose", action="store_true")
+    p.set_defaults(func=cmd_parser)
 
     p = sub.add_parser("verify", help="check a ledger hash chain")
     p.add_argument("path")

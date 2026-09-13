@@ -1,0 +1,32 @@
+78 labelled replies from the world's own corpus
+  credentials found for: vertex
+
+  deterministic: done (0s)
+  vertex:gemini-2.5-flash: done (414s)
+  usage: {"backend": "vertex:gemini-2.5-flash", "project": "project-f7d3953a-cada-4d13-b5e", "location": "global", "calls": 80, "prompt_tokens": 30698, "output_tokens": 5182, "thinking_tokens": 0, "rate_limited": 12, "settled_interval_seconds": 5.189}
+
+parser                           n  accuracy  macro F1  critical      hard  errors    time
+------------------------------------------------------------------------------------------
+stub                            78    56.4%     0.702    56.7%    60.0%       0      0s
+vertex:gemini-2.5-flash         78    97.4%     0.985   100.0%    90.0%       3    414s
+
+critical: recall on opt_out, dispute, hardship and wrong_number, where a
+miss is a conduct failure rather than a missed rupee.
+hard: cases written specifically to defeat a keyword matcher.
+
+paired comparison: 34 disagreements, 33 favour vertex:gemini-2.5-flash, 1 favour stub
+exact two-sided sign test p=0.0  (significant)
+
+intent                      support              stub  vertex:gemini-2.
+-----------------------------------------------------------------------
+already_paid                      8        38% recall       100% recall
+dispute                           9        22% recall       100% recall
+hardship                          6        83% recall       100% recall
+needs_help                       10        60% recall       100% recall
+opt_out                          10        70% recall       100% recall
+partial_payment_promise          10        40% recall        80% recall
+promise_to_pay                   12        75% recall       100% recall
+unintelligible                    8        62% recall       100% recall
+wrong_number                      5        60% recall       100% recall
+
+wrote out/parser_bench.json
